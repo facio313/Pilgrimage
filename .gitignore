@@ -1,0 +1,78 @@
+# 절대 커밋 금지
+.env
+*.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+.uv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.egg-info/
+dist/
+build/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+media/
+staticfiles/
+
+# Node / React / Vite
+node_modules/
+frontend/dist/
+.pnp.*
+*.tsbuildinfo
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+*.swp
+*.swo
+
+# Cursor
+.cursor/
+.cursorignore
+.cursorules
+
+# Claude Code
+.claude/settings.local.json
+
+# OpenAI Codex
+.codex/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
