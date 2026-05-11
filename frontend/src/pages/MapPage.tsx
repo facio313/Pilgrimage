@@ -1,0 +1,983 @@
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { useKakaoMap } from '../hooks/useKakaoMap';
+import { listSpots, getNearbyRecommend, type Spot, type NearbySpot } from '../api/spots';
+import { login, register } from '../api/auth';
+import { apiClient } from '../api/client';
+import { useAuthStore } from '../store/auth';
+import { useRouteDraftStore } from '../store/route';
+
+const SEOUL_CITY_HALL = { lat: 37.5666103, lng: 126.9783882 };
+const SEARCH_RADIUS_M = 10_000;
+const SAVED_POINT_HIT_RADIUS_M = 40;
+const COMPACT_NAV_MAX_WIDTH = 1024;
+const DRAWER_ANIMATION_MS = 280;
+const DRAWER_EDGE_GAP_PX = 16;
+
+interface PopoverExtra {
+  spot?: Spot;
+  phone?: string;
+  category?: string;
+  categoryCode?: string;
+  placeUrl?: string;
+}
+
+interface PointOverlayRecord {
+  overlay: any;
+  ringOverlay: any | null;
+  lat: number;
+  lng: number;
+  name: string;
+  address: string;
+  icon: string;
+  rating: number;
+  extra?: PopoverExtra;
+}
+
+interface CachedPopoverData {
+  lat: number;
+  lng: number;
+  name: string;
+  address: string;
+  extra?: PopoverExtra;
+}
+
+export function MapPage() {
+  const navigate = useNavigate();
+  const { theme, spotIds, addSpot, removeSpot } = useRouteDraftStore();
+  const { accessToken, userEmail, userNickname, clear } = useAuthStore();
+  const [canUseCompactNav, setCanUseCompactNav] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= COMPACT_NAV_MAX_WIDTH : false
+  );
+  const { containerRef, map, error } = useKakaoMap({ center: SEOUL_CITY_HALL });
+
+  useEffect(() => {
+    const onResize = () => {
+      setCanUseCompactNav(window.innerWidth <= COMPACT_NAV_MAX_WIDTH);
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const { data: spots = [], isLoading } = useQuery({
+    queryKey: ['spots', theme],
+    queryFn: () =>
+      listSpots({
+        theme: theme ?? undefined,
+        lat: SEOUL_CITY_HALL.lat,
+        lng: SEOUL_CITY_HALL.lng,
+        radius: SEARCH_RADIUS_M,
+      }),
+    enabled: !!map && !!theme,
+  });
+
+  const markersRef = useRef<any[]>([]);
+  const overlayRef = useRef<any>(null);
+  const pointOverlaysRef = useRef<PointOverlayRecord[]>([]);
+  const popoverCacheRef = useRef<Map<string, CachedPopoverData>>(new Map());
+  const nearbyPlaceCacheRef = useRef<Map<string, any | null>>(new Map());
+  const reviewsCacheRef = useRef<Map<string, any[]>>(new Map());
+
+  const stopMapEvent = (event: Event) => {
+    event.stopPropagation();
+    window.kakao?.maps?.event?.preventMap?.();
+  };
+
+  const coordinateKey = (lat: number, lng: number) => `coord:${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const addressKey = (address: string) => {
+    const normalized = address.trim().replace(/\s+/g, ' ').toLowerCase();
+    return normalized ? `addr:${normalized}` : '';
+  };
+  const getCacheKey = (lat: number, lng: number, address: string) =>
+    addressKey(address) || coordinateKey(lat, lng);
+
+  const distanceMeters = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const earthRadiusM = 6_371_000;
+    const dLat = toRad(bLat - aLat);
+    const dLng = toRad(bLng - aLng);
+    const lat1 = toRad(aLat);
+    const lat2 = toRad(bLat);
+    const h =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 2 * earthRadiusM * Math.asin(Math.sqrt(h));
+  };
+
+  const findPointAt = (lat: number, lng: number) =>
+    pointOverlaysRef.current.find((p) => p.lat === lat && p.lng === lng);
+
+  const findSavedPointNear = (lat: number, lng: number) =>
+    pointOverlaysRef.current.find(
+      (p) => distanceMeters(lat, lng, p.lat, p.lng) <= SAVED_POINT_HIT_RADIUS_M
+    );
+
+  const cachePopover = (lat: number, lng: number, name: string, address: string, extra?: PopoverExtra) => {
+    const payload = { lat, lng, name, address, extra };
+    popoverCacheRef.current.set(coordinateKey(lat, lng), payload);
+    const key = addressKey(address);
+    if (key) popoverCacheRef.current.set(key, payload);
+  };
+
+  const getCachedPopover = (lat: number, lng: number, address = '') => {
+    const byAddress = address ? popoverCacheRef.current.get(addressKey(address)) : undefined;
+    return byAddress || popoverCacheRef.current.get(coordinateKey(lat, lng));
+  };
+
+  const removePointAt = (lat: number, lng: number) => {
+    const idx = pointOverlaysRef.current.findIndex((p) => p.lat === lat && p.lng === lng);
+    if (idx !== -1) {
+      pointOverlaysRef.current[idx].overlay.setMap(null);
+      if (pointOverlaysRef.current[idx].ringOverlay) {
+        pointOverlaysRef.current[idx].ringOverlay.setMap(null);
+      }
+      pointOverlaysRef.current.splice(idx, 1);
+    }
+  };
+
+  const createPointMarker = (position: any, icon: string, rating: number, name: string, address: string, extra?: PopoverExtra) => {
+    if (!map) return;
+    const kakao = window.kakao;
+    const lat = position.getLat();
+    const lng = position.getLng();
+    const ratio = Math.min(rating / 5, 1);
+    const degrees = ratio * 360;
+    const el = document.createElement('div');
+    el.className = 'point-marker';
+    el.innerHTML = `
+      <span class="point-marker__ring" style="background: conic-gradient(#f5c518 0deg ${degrees}deg, #d8d8d8 ${degrees}deg 360deg)">
+        <span class="point-marker__icon">${icon}</span>
+      </span>
+    `;
+    ['click', 'mousedown', 'pointerdown', 'touchstart'].forEach((eventName) => {
+      el.addEventListener(eventName, stopMapEvent);
+    });
+    el.addEventListener('click', () => {
+      showPopover(position, name, address, extra);
+    });
+    const overlay = new kakao.maps.CustomOverlay({
+      content: el,
+      position,
+      yAnchor: 0.5,
+      xAnchor: 0.5,
+      zIndex: 15,
+      clickable: true,
+    });
+    overlay.setMap(map);
+    cachePopover(lat, lng, name, address, extra);
+    pointOverlaysRef.current.push({ overlay, ringOverlay: null, lat, lng, name, address, icon, rating, extra });
+    createNearbyRing(lat, lng);
+  };
+
+  const closeOverlay = () => {
+    overlayRef.current?.setMap(null);
+    overlayRef.current = null;
+  };
+
+  const CATEGORY_ICONS: Record<string, string> = {
+    SW8: '🚇', AT4: '🏛️', CT1: '🎭', FD6: '🍽️', CE7: '☕',
+    HP8: '🏥', PK6: '🅿️', OL7: '⛽', SC4: '🏫', BK9: '🏦',
+    MT1: '🛒', CS2: '🏪', AD5: '🏨', PM9: '💊',
+  };
+  const CATEGORY_LABELS: Record<string, string> = {
+    SW8: '지하철역', AT4: '관광명소', CT1: '문화시설', FD6: '음식점', CE7: '카페',
+    HP8: '병원', PK6: '주차장', OL7: '주유소', SC4: '학교', BK9: '은행',
+    MT1: '대형마트', CS2: '편의점', AD5: '숙박', PM9: '약국',
+  };
+
+  const THEME_ICONS: Record<string, string> = {
+    nature: '🌿', heritage: '🏛️', urban: '🏙️', festival: '🎪', leisure: '🎡',
+    shopping: '🛍️', food: '🍽️', camping: '⛺', medical: '🏥', family: '👨‍👩‍👧', mixed: '📍',
+  };
+  const CATEGORY_TO_ICON: Record<string, string> = {
+    '음식점': '🍽️', '카페': '☕', '전통시장': '🛍️', '쇼핑': '🛍️', '문화재': '🏛️',
+    '공원': '🌿', '관광지': '📍', '도시공원': '🏙️', '전망대': '👀', '등산로': '⛰️',
+    '갤러리': '🎨', '전통마을': '🏛️', '박물관': '🏛️', '자연': '🌿', '서점': '📚',
+    '문화시설': '🎭', '레저': '🎡',
+  };
+
+  const getSpotIcon = (spot: NearbySpot) => {
+    if (spot.category && CATEGORY_TO_ICON[spot.category]) return CATEGORY_TO_ICON[spot.category];
+    for (const tag of spot.theme_tags) {
+      if (THEME_ICONS[tag]) return THEME_ICONS[tag];
+    }
+    return '📍';
+  };
+
+  const RING_RADIUS_PX = 118;
+  const RING_SLOT_BEARINGS = [0, 45, 90, 135, 180, 225, 270, 315];
+
+  const createNearbyRing = (centerLat: number, centerLng: number): { overlay: any } | null => {
+    if (!map) return null;
+    const kakao = window.kakao;
+
+    getNearbyRecommend({ lat: centerLat, lng: centerLng, theme: theme || undefined })
+      .then((nearby) => {
+        if (!nearby.length) return;
+
+        const el = document.createElement('div');
+        el.className = 'nearby-ring';
+        ['click', 'mousedown', 'pointerdown', 'touchstart'].forEach((ev) => {
+          el.addEventListener(ev, stopMapEvent);
+        });
+
+        nearby.slice(0, RING_SLOT_BEARINGS.length).forEach((spot, index) => {
+          const bearingRad = (RING_SLOT_BEARINGS[index] * Math.PI) / 180;
+          const x = RING_RADIUS_PX * Math.sin(bearingRad);
+          const y = -RING_RADIUS_PX * Math.cos(bearingRad);
+
+          const item = document.createElement('div');
+          item.className = 'nearby-ring__item';
+          item.style.setProperty('--x', `${Math.round(x)}px`);
+          item.style.setProperty('--y', `${Math.round(y)}px`);
+
+          const icon = getSpotIcon(spot);
+          const score = Number(spot.avg_review_score).toFixed(1);
+
+          item.innerHTML = `
+            <span class="nearby-ring__bubble">${icon}</span>
+            <span class="nearby-ring__name">${spot.name.length > 6 ? spot.name.slice(0, 6) + '…' : spot.name}</span>
+            <span class="nearby-ring__score">⭐ ${score}</span>
+          `;
+
+          ['click', 'mousedown', 'pointerdown', 'touchstart'].forEach((ev) => {
+            item.addEventListener(ev, stopMapEvent);
+          });
+
+          item.addEventListener('click', () => {
+            const pos = new kakao.maps.LatLng(spot.lat, spot.lng);
+            map!.panTo(pos);
+            setTimeout(() => {
+              showPopover(pos, spot.name, spot.address, { spot: spot as unknown as Spot });
+            }, 400);
+          });
+
+          el.appendChild(item);
+        });
+
+        const ringOvl = new kakao.maps.CustomOverlay({
+          content: el,
+          position: new kakao.maps.LatLng(centerLat, centerLng),
+          yAnchor: 0.5,
+          xAnchor: 0.5,
+          zIndex: 12,
+          clickable: true,
+        });
+        ringOvl.setMap(map);
+
+        const record = pointOverlaysRef.current.find(
+          (p) => p.lat === centerLat && p.lng === centerLng
+        );
+        if (record) record.ringOverlay = ringOvl;
+      })
+      .catch((err) => {
+        console.error('[Pilgrimage] nearby recommend error:', err);
+      });
+
+    return null;
+  };
+
+  const showPopover = (position: any, name: string, address: string, extra?: PopoverExtra) => {
+    if (!map) return;
+    const kakao = window.kakao;
+    closeOverlay();
+
+    const spot = extra?.spot;
+    const el = document.createElement('div');
+    el.className = 'spot-popover';
+    ['click', 'mousedown', 'pointerdown', 'touchstart', 'dblclick'].forEach((eventName) => {
+      el.addEventListener(eventName, stopMapEvent);
+    });
+
+    const icon = extra?.categoryCode ? CATEGORY_ICONS[extra.categoryCode] || '📍' : '📍';
+    const categoryLabel = extra?.categoryCode ? CATEGORY_LABELS[extra.categoryCode] || extra?.category || '' : extra?.category || '';
+    const scoreHtml = spot ? `<p class="spot-popover__score">평점 ${Number(spot.avg_review_score).toFixed(1)}</p>` : '';
+    const categoryHtml = categoryLabel ? `<span class="spot-popover__badge">${icon} ${categoryLabel}</span>` : '';
+    const phoneHtml = extra?.phone ? `<p class="spot-popover__phone">📞 ${extra.phone}</p>` : '';
+    const hasPoint = !!findPointAt(position.getLat(), position.getLng());
+
+    el.innerHTML = `
+      <button class="spot-popover__close" aria-label="닫기">&times;</button>
+      <div class="spot-popover__photo-slot"></div>
+      ${categoryHtml}
+      <strong class="spot-popover__name">${name}</strong>
+      <p class="spot-popover__addr">${address}</p>
+      ${phoneHtml}${scoreHtml}
+      <div class="spot-popover__google"></div>
+      <div class="spot-popover__reviews"></div>
+      <div class="spot-popover__route-actions">
+        <button data-action="set-point">${hasPoint ? '지점 해제' : '지점 설정'}</button>
+        <button data-action="add-waypoint">경로 중간 추가</button>
+      </div>
+      <div class="spot-popover__links"></div>
+      ${spot ? `<div class="spot-popover__actions">
+        <button data-action="detail">상세</button>
+        <button data-action="route" class="primary">경로에 추가</button>
+        <button data-action="visit">방문 인증</button>
+      </div>` : ''}
+      <div class="spot-popover__tail"></div>
+    `;
+
+    let placeRating = spot ? Number(spot.avg_review_score) || 0 : 0;
+
+    const lat = position.getLat();
+    const lng = position.getLng();
+    const nearbyCacheKey = getCacheKey(lat, lng, address);
+    const searchQuery = encodeURIComponent(`${name} ${address}`.trim());
+    const placeLookupKey = `google:v2:${nearbyCacheKey}|${searchQuery}`;
+    cachePopover(lat, lng, name, address, extra);
+
+    const overlay = new kakao.maps.CustomOverlay({
+      content: el,
+      position,
+      yAnchor: 1.04,
+      xAnchor: 0.5,
+      zIndex: 20,
+      clickable: true,
+    });
+    overlay.setMap(map);
+    overlayRef.current = overlay;
+
+    const isDbSpot = !!(spot && spot.id);
+    const linksSlot = el.querySelector('.spot-popover__links');
+    const renderMapLinks = (place?: any | null) => {
+      if (!linksSlot) return;
+      const googleMapsUrl = place?.googleMapsUri || `https://www.google.com/maps/search/?api=1&query=${searchQuery}`;
+      const kakaoMapsUrl = extra?.placeUrl || `https://map.kakao.com/link/search/${searchQuery}`;
+      linksSlot.innerHTML = [
+        `<a class="spot-popover__map-link" href="${googleMapsUrl}" target="_blank" rel="noopener">구글맵에서 보기</a>`,
+        `<a class="spot-popover__map-link" href="${kakaoMapsUrl}" target="_blank" rel="noopener">카카오맵에서 보기</a>`,
+      ].join('');
+    };
+    renderMapLinks();
+    const syncPopoverPosition = () => overlay.setPosition(position);
+    window.requestAnimationFrame(syncPopoverPosition);
+
+    if (isDbSpot) {
+      const googleSlot = el.querySelector('.spot-popover__google');
+      const reviewSlot = el.querySelector('.spot-popover__reviews');
+      if (googleSlot) {
+        googleSlot.innerHTML = `<span class="spot-popover__rating-btn" data-spot-id="${spot!.id}">⭐ ${Number(spot!.avg_review_score).toFixed(1)} · 리뷰 보기 ▾</span>`;
+        const ratingBtn = googleSlot.querySelector('.spot-popover__rating-btn');
+        if (ratingBtn && reviewSlot) {
+          ratingBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            if (reviewSlot.children.length > 0) {
+              reviewSlot.innerHTML = '';
+              return;
+            }
+            const cacheKey = `our:${spot!.id}`;
+            const cached = reviewsCacheRef.current.get(cacheKey);
+            if (cached) {
+              reviewSlot.innerHTML = renderOurReviews(cached);
+              return;
+            }
+            reviewSlot.innerHTML = '<p class="spot-popover__review-loading">리뷰 불러오는 중...</p>';
+            apiClient.get('/reviews/', { params: { spot_id: spot!.id } }).then((revRes) => {
+              const reviews = Array.isArray(revRes.data) ? revRes.data : revRes.data?.results || [];
+              reviewsCacheRef.current.set(cacheKey, reviews);
+              if (!reviews.length) {
+                reviewSlot.innerHTML = '<p class="spot-popover__review-empty">리뷰가 없습니다</p>';
+                return;
+              }
+              reviewSlot.innerHTML = renderOurReviews(reviews);
+            }).catch(() => {
+              reviewSlot.innerHTML = '<p class="spot-popover__review-empty">리뷰를 불러오지 못했습니다</p>';
+            });
+          });
+        }
+      }
+    }
+
+    const renderGooglePlaceInfo = (place: any | null) => {
+      const googleSlot = el.querySelector('.spot-popover__google');
+      if (!googleSlot || !place?.placeId) return;
+
+      if (place.rating) placeRating = place.rating;
+      googleSlot.innerHTML = `<span class="spot-popover__rating-btn" data-place-id="${place.placeId}">${place.rating ? `⭐ ${place.rating}${place.userRatingCount ? ` (${place.userRatingCount})` : ''} · ` : ''}구글 리뷰 보기 ▾</span>`;
+
+      const ratingBtn = googleSlot.querySelector('.spot-popover__rating-btn');
+      const reviewSlot = el.querySelector('.spot-popover__reviews');
+      if (!ratingBtn || !reviewSlot) return;
+
+      ratingBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (reviewSlot.children.length > 0) {
+          reviewSlot.innerHTML = '';
+          return;
+        }
+        const cachedReviews = reviewsCacheRef.current.get(place.placeId);
+        if (cachedReviews) {
+          reviewSlot.innerHTML = renderReviews(cachedReviews);
+          return;
+        }
+        reviewSlot.innerHTML = '<p class="spot-popover__review-loading">리뷰 불러오는 중...</p>';
+        apiClient.get('/places/reviews/', { params: { place_id: place.placeId } }).then((revRes) => {
+          const reviews = revRes.data?.reviews || [];
+          reviewsCacheRef.current.set(place.placeId, reviews);
+          if (!reviews.length) {
+            const debugStatus = revRes.data?._debug?.status;
+            reviewSlot.innerHTML = `<p class="spot-popover__review-empty">리뷰가 없습니다${debugStatus ? ` (API: ${debugStatus})` : ''}</p>`;
+            return;
+          }
+          reviewSlot.innerHTML = renderReviews(reviews);
+        }).catch((err) => {
+          console.error('[Pilgrimage] reviews fetch error:', err);
+          reviewSlot.innerHTML = '<p class="spot-popover__review-empty">리뷰를 불러오지 못했습니다</p>';
+        });
+      });
+    };
+
+    const applyNearbyPlace = (place: any | null) => {
+      const photoSlot = el.querySelector('.spot-popover__photo-slot');
+      if (place?.photoUrl && photoSlot) {
+        photoSlot.innerHTML = `<img class="spot-popover__photo" src="${place.photoUrl}" alt="${place.name}" />`;
+        const img = photoSlot.querySelector('img');
+        img?.addEventListener('load', syncPopoverPosition, { once: true });
+      }
+      renderGooglePlaceInfo(place);
+      renderMapLinks(place);
+      syncPopoverPosition();
+    };
+
+    if (nearbyPlaceCacheRef.current.has(placeLookupKey)) {
+      applyNearbyPlace(nearbyPlaceCacheRef.current.get(placeLookupKey) ?? null);
+    } else {
+      apiClient.get('/places/nearby/', {
+        params: { lat, lng, query: `${name} ${address}`.trim() },
+      }).then((res) => {
+        const place = res.data?.results?.[0] ?? null;
+        if (place) nearbyPlaceCacheRef.current.set(placeLookupKey, place);
+        applyNearbyPlace(place);
+      }).catch(() => {
+        applyNearbyPlace(null);
+      });
+    }
+
+
+    el.querySelector('.spot-popover__close')!.addEventListener('click', closeOverlay);
+
+    el.querySelector('[data-action="set-point"]')!.addEventListener('click', () => {
+      const lat = position.getLat();
+      const lng = position.getLng();
+      if (findPointAt(lat, lng)) {
+        removePointAt(lat, lng);
+      } else {
+        createPointMarker(position, icon, placeRating, name, address, extra);
+      }
+      closeOverlay();
+    });
+
+    if (spot) {
+      const routeBtn = el.querySelector('[data-action="route"]') as HTMLButtonElement;
+      if (inRoute(spot.id)) {
+        routeBtn.textContent = '경로에서 제거';
+        routeBtn.classList.remove('primary');
+      }
+      el.querySelector('[data-action="detail"]')!.addEventListener('click', () => navigate(`/spot/${spot.id}`));
+      routeBtn.addEventListener('click', () => {
+        inRoute(spot.id) ? removeSpot(spot.id) : addSpot(spot.id);
+        closeOverlay();
+      });
+      el.querySelector('[data-action="visit"]')!.addEventListener('click', () => navigate(`/visit/${spot.id}`));
+      if (!isAuthed) {
+        routeBtn.style.display = 'none';
+        el.querySelector('[data-action="visit"]')!.setAttribute('style', 'display:none');
+      }
+    }
+
+  };
+
+  const renderReviews = (reviews: any[]) => {
+    if (!reviews.length) return '<p class="spot-popover__review-empty">리뷰가 없습니다</p>';
+    return reviews.map((rv: any) =>
+      `<div class="spot-popover__review">
+        <div class="spot-popover__review-header">
+          <strong>${rv.author}</strong>
+          <span>${'⭐'.repeat(rv.rating || 0)}</span>
+          <span class="spot-popover__review-time">${rv.relativeTime}</span>
+        </div>
+        <p>${rv.text?.length > 80 ? rv.text.slice(0, 80) + '…' : rv.text}</p>
+      </div>`
+    ).join('');
+  };
+
+  const renderOurReviews = (reviews: any[]) => {
+    if (!reviews.length) return '<p class="spot-popover__review-empty">리뷰가 없습니다</p>';
+    return reviews.map((rv: any) =>
+      `<div class="spot-popover__review">
+        <div class="spot-popover__review-header">
+          <strong>${rv.user_nickname || '익명'}</strong>
+          <span>${'⭐'.repeat(rv.rating || 0)}</span>
+        </div>
+        <p>${(rv.body || '').length > 80 ? rv.body.slice(0, 80) + '…' : rv.body || ''}</p>
+      </div>`
+    ).join('');
+  };
+
+  const openOverlay = (spot: Spot) => {
+    const kakao = window.kakao;
+    const position = new kakao.maps.LatLng(spot.lat, spot.lng);
+    showPopover(position, spot.name, spot.address || '', { spot });
+  };
+
+  useEffect(() => {
+    if (!map) return;
+    const kakao = window.kakao;
+    const places = new kakao.maps.services.Places();
+
+    const geocoder = new kakao.maps.services.Geocoder();
+    const CATEGORIES = ['SW8', 'AT4', 'CT1', 'FD6', 'CE7', 'HP8', 'PK6', 'OL7', 'SC4', 'BK9', 'MT1', 'CS2', 'AD5', 'PM9'];
+
+    const onClick = (_mouseEvent: any) => {
+      const latlng = _mouseEvent.latLng;
+      const clickedLat = latlng.getLat();
+      const clickedLng = latlng.getLng();
+      const savedPoint = findSavedPointNear(clickedLat, clickedLng);
+      if (savedPoint) {
+        showPopover(
+          new kakao.maps.LatLng(savedPoint.lat, savedPoint.lng),
+          savedPoint.name,
+          savedPoint.address,
+          savedPoint.extra
+        );
+        return;
+      }
+
+      const cachedByCoordinate = getCachedPopover(clickedLat, clickedLng);
+      if (cachedByCoordinate) {
+        showPopover(
+          new kakao.maps.LatLng(cachedByCoordinate.lat, cachedByCoordinate.lng),
+          cachedByCoordinate.name,
+          cachedByCoordinate.address,
+          cachedByCoordinate.extra
+        );
+        return;
+      }
+
+      let bestPlace: any = null;
+      let resolved = 0;
+
+      const tryShow = (roadAddr = '', jibunAddr = '') => {
+        const cachedByAddress = getCachedPopover(clickedLat, clickedLng, roadAddr || jibunAddr);
+        if (cachedByAddress) {
+          showPopover(
+            new kakao.maps.LatLng(cachedByAddress.lat, cachedByAddress.lng),
+            cachedByAddress.name,
+            cachedByAddress.address,
+            cachedByAddress.extra
+          );
+          return;
+        }
+
+        if (bestPlace) {
+          showPopover(latlng, bestPlace.place_name, bestPlace.road_address_name || bestPlace.address_name, {
+            phone: bestPlace.phone,
+            category: bestPlace.category_group_name,
+            categoryCode: bestPlace.category_group_code,
+            placeUrl: bestPlace.place_url,
+          });
+        } else {
+          showPopover(latlng, roadAddr || jibunAddr, roadAddr ? jibunAddr : '');
+        }
+      };
+
+      const searchOpts = { location: latlng, radius: 50, size: 1, sort: kakao.maps.services.SortBy.DISTANCE };
+
+      geocoder.coord2Address(clickedLng, clickedLat, (addrResult: any[], addrStatus: string) => {
+        const addr = addrStatus === kakao.maps.services.Status.OK && addrResult.length > 0 ? addrResult[0] : null;
+        const roadAddr = addr?.road_address?.address_name || '';
+        const jibunAddr = addr?.address?.address_name || '';
+        const cachedByAddress = getCachedPopover(clickedLat, clickedLng, roadAddr || jibunAddr);
+        if (cachedByAddress) {
+          showPopover(
+            new kakao.maps.LatLng(cachedByAddress.lat, cachedByAddress.lng),
+            cachedByAddress.name,
+            cachedByAddress.address,
+            cachedByAddress.extra
+          );
+          return;
+        }
+
+        CATEGORIES.forEach((code) => {
+          places.categorySearch(code, (result: any[], status: string) => {
+            if (status === kakao.maps.services.Status.OK && result.length > 0) {
+              const place = result[0];
+              const dist = parseFloat(place.distance);
+              if (!bestPlace || dist < parseFloat(bestPlace.distance)) {
+                bestPlace = place;
+              }
+            }
+            resolved++;
+            if (resolved === CATEGORIES.length) tryShow(roadAddr, jibunAddr);
+          }, searchOpts);
+        });
+      });
+    };
+
+    kakao.maps.event.addListener(map, 'click', onClick);
+    return () => kakao.maps.event.removeListener(map, 'click', onClick);
+  }, [map]);
+
+  useEffect(() => {
+    if (!map) return;
+    markersRef.current.forEach((m) => m.setMap(null));
+    markersRef.current = [];
+    const kakao = window.kakao;
+    spots.forEach((s) => {
+      const marker = new kakao.maps.Marker({
+        map,
+        position: new kakao.maps.LatLng(s.lat, s.lng),
+        title: s.name,
+      });
+      kakao.maps.event.addListener(marker, 'click', () => openOverlay(s));
+      markersRef.current.push(marker);
+    });
+    return () => {
+      markersRef.current.forEach((m) => m.setMap(null));
+      markersRef.current = [];
+      if (overlayRef.current) {
+        overlayRef.current.setMap(null);
+        overlayRef.current = null;
+      }
+    };
+  }, [map, spots]);
+
+  const polylineRef = useRef<any>(null);
+  const selectedSpotsOrdered = useMemo(
+    () => spotIds.map((id) => spots.find((s) => s.id === id)).filter((s): s is Spot => !!s),
+    [spotIds, spots]
+  );
+  useEffect(() => {
+    if (!map) return;
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+    if (selectedSpotsOrdered.length < 2) return;
+    const kakao = window.kakao;
+    polylineRef.current = new kakao.maps.Polyline({
+      map,
+      path: selectedSpotsOrdered.map((s) => new kakao.maps.LatLng(s.lat, s.lng)),
+      strokeWeight: 4,
+      strokeColor: '#1a73e8',
+      strokeOpacity: 0.8,
+    });
+  }, [map, selectedSpotsOrdered]);
+
+  if (error) {
+    return <div style={{ padding: 16, color: '#c00' }}>지도를 불러오지 못했습니다: {error.message}</div>;
+  }
+
+  const isAuthed = !!accessToken;
+  const isCompact = isAuthed && canUseCompactNav;
+  const overlayClass = `map-overlay ${isCompact ? 'compact' : 'expanded'} ${isAuthed ? 'with-menu' : 'with-form'}`;
+
+  const inRoute = (id: string) => spotIds.includes(id);
+
+  return (
+    <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
+      <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
+
+      <div className={overlayClass}>
+        <header className="map-header">
+          <div className="map-header__stage" key={isAuthed ? 'menu' : 'auth'}>
+            {isAuthed ? (
+              <MenuRow
+                theme={theme}
+                spotCount={spotIds.length}
+                isLoading={isLoading}
+                isCompact={isCompact}
+                map={map}
+                userEmail={userEmail}
+                userNickname={userNickname}
+                onTheme={() => navigate('/themes')}
+                onAuto={() => navigate('/route/auto')}
+                onSave={() => navigate('/route/save')}
+                onLogout={clear}
+              />
+            ) : (
+              <AuthInline />
+            )}
+          </div>
+        </header>
+        {isAuthed && <SearchBar map={map} />}
+      </div>
+
+      {/* 팝오버는 Kakao CustomOverlay로 지도 위에 직접 표시됨 */}
+    </div>
+  );
+}
+
+interface MenuRowProps {
+  theme: string | null;
+  spotCount: number;
+  isLoading: boolean;
+  isCompact: boolean;
+  map: any;
+  userEmail: string | null;
+  userNickname: string | null;
+  onTheme: () => void;
+  onAuto: () => void;
+  onSave: () => void;
+  onLogout: () => void;
+}
+
+function MenuRow({
+  theme, spotCount, isLoading, isCompact, map, userEmail, userNickname,
+  onTheme, onAuto, onSave, onLogout,
+}: MenuRowProps) {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isDrawerClosing, setIsDrawerClosing] = useState(false);
+  const [drawerStyle, setDrawerStyle] = useState<CSSProperties>({});
+  const drawerCloseTimerRef = useRef<number | null>(null);
+
+  const syncDrawerPosition = () => {
+    const header = document.querySelector('.map-header');
+    const headerBottom = header?.getBoundingClientRect().bottom ?? 0;
+    setDrawerStyle({
+      '--drawer-top': `${Math.round(headerBottom + DRAWER_EDGE_GAP_PX)}px`,
+      '--drawer-gap': `${DRAWER_EDGE_GAP_PX}px`,
+    } as CSSProperties);
+  };
+
+  const clearDrawerTimer = () => {
+    if (drawerCloseTimerRef.current !== null) {
+      window.clearTimeout(drawerCloseTimerRef.current);
+      drawerCloseTimerRef.current = null;
+    }
+  };
+
+  const openDrawer = () => {
+    clearDrawerTimer();
+    syncDrawerPosition();
+    setIsDrawerClosing(false);
+    setIsDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    if (!isDrawerOpen) return;
+    clearDrawerTimer();
+    setIsDrawerClosing(true);
+    setIsDrawerOpen(false);
+    drawerCloseTimerRef.current = window.setTimeout(() => {
+      setIsDrawerClosing(false);
+      drawerCloseTimerRef.current = null;
+    }, DRAWER_ANIMATION_MS);
+  };
+
+  useEffect(() => {
+    closeDrawer();
+    const closeOnResize = () => {
+      syncDrawerPosition();
+      closeDrawer();
+    };
+    window.addEventListener('resize', closeOnResize);
+    return () => {
+      window.removeEventListener('resize', closeOnResize);
+      clearDrawerTimer();
+    };
+  }, [isCompact]);
+
+  const display = userNickname || userEmail || '?';
+  const initial = display.trim().charAt(0).toUpperCase() || '?';
+  const drawer =
+    isCompact && (isDrawerOpen || isDrawerClosing) && typeof document !== 'undefined'
+      ? createPortal(
+          <>
+            <div className="side-drawer-backdrop open" onClick={closeDrawer} />
+            <aside className={`side-drawer ${isDrawerClosing ? 'closing' : 'open'}`} style={drawerStyle}>
+              <div className="side-drawer__header">
+                <strong>메뉴</strong>
+                <button type="button" onClick={closeDrawer} aria-label="메뉴 닫기">
+                  &times;
+                </button>
+              </div>
+              <button onClick={() => { closeDrawer(); onTheme(); }}>테마 선택</button>
+              <button onClick={() => { closeDrawer(); onAuto(); }}>자동 추천</button>
+              {spotCount > 0 && (
+                <button onClick={() => { closeDrawer(); onSave(); }}>
+                  루트 저장 ({spotCount})
+                </button>
+              )}
+              <button className="danger" onClick={() => { closeDrawer(); onLogout(); }}>
+                로그아웃
+              </button>
+            </aside>
+          </>,
+          document.body
+        )
+      : null;
+  const profileBlock = (
+    <div className="profile-block map-header__profile">
+      <div className="profile-info">
+        <strong>{userNickname || '닉네임 미설정'}</strong>
+        <small>{userEmail ?? ''}</small>
+      </div>
+      <button
+        type="button"
+        className="profile-avatar"
+        title="마이페이지"
+        aria-label="마이페이지"
+        onClick={() => alert('마이페이지는 곧 제공됩니다.')}
+      >
+        {initial}
+      </button>
+    </div>
+  );
+
+  return (
+    <div className={`map-header__row ${isCompact ? 'is-compact' : 'is-expanded'}`}>
+      <button
+        type="button"
+        className="mobile-menu-button"
+        aria-label="메뉴 열기"
+        onClick={openDrawer}
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+      <div className="map-header__brand">
+        <span className="map-header__title">
+          Pilgrimage
+          {!isCompact && theme && (
+            <span style={{ marginLeft: 10, fontSize: 12, color: '#666', fontWeight: 400 }}>
+              · {theme} · {spotCount}개{isLoading ? ' · 로딩...' : ''}
+            </span>
+          )}
+        </span>
+        {!isCompact && profileBlock}
+      </div>
+      <nav className="map-header__nav">
+        <button onClick={onTheme}>테마</button>
+        <button onClick={onAuto}>자동 추천</button>
+        {spotCount > 0 && (
+          <button className="primary" onClick={onSave}>
+            저장 ({spotCount})
+          </button>
+        )}
+        {!isCompact && <button onClick={onLogout}>로그아웃</button>}
+      </nav>
+      {isCompact && <SearchBar map={map} className="map-search--inline" />}
+      {isCompact && profileBlock}
+      {drawer}
+    </div>
+  );
+}
+
+interface SearchBarProps {
+  map: any;
+  className?: string;
+}
+
+function SearchBar({ map, className = '' }: SearchBarProps) {
+  const [query, setQuery] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!map || !query.trim()) return;
+    const services = window.kakao?.maps?.services;
+    if (!services) {
+      setError('검색 모듈을 불러오지 못했어요');
+      return;
+    }
+    const geocoder = new services.Geocoder();
+    geocoder.addressSearch(query.trim(), (result: any[], status: string) => {
+      if (status === services.Status.OK && result.length > 0) {
+        const { x, y } = result[0];
+        map.setCenter(new window.kakao.maps.LatLng(parseFloat(y), parseFloat(x)));
+        map.setLevel(4);
+      } else {
+        setError('해당 주소를 찾지 못했어요');
+      }
+    });
+  };
+
+  return (
+    <form className={`map-search ${className}`} onSubmit={onSubmit}>
+      <input
+        type="text"
+        placeholder="주소를 입력하세요 (예: 서울 종로구 사직로 161)"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <button type="submit">검색</button>
+      {error && <span className="search-error">{error}</span>}
+    </form>
+  );
+}
+
+function AuthInline() {
+  const setTokens = useAuthStore((s) => s.setTokens);
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      if (mode === 'register') {
+        await register({ email, password, nickname });
+      }
+      const resp = await login(email, password);
+      setTokens(resp.access, resp.refresh, resp.email || email, resp.nickname);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '인증 실패');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="map-header__brand">
+        <span className="map-header__title">Pilgrimage</span>
+        <p className="map-header__tag">맞춤 여행 경로 + GPS 30분 인증</p>
+      </div>
+
+      <form onSubmit={onSubmit} className="auth-form">
+        <input
+          type="email" placeholder="이메일"
+          value={email} onChange={(e) => setEmail(e.target.value)}
+          required autoFocus
+        />
+        <input
+          type="password" placeholder="비밀번호 (8자 이상)"
+          value={password} onChange={(e) => setPassword(e.target.value)}
+          required minLength={8}
+        />
+        {mode === 'register' && (
+          <input
+            type="text" placeholder="닉네임"
+            value={nickname} onChange={(e) => setNickname(e.target.value)}
+          />
+        )}
+        <button type="submit" disabled={submitting}>
+          {submitting
+            ? '처리 중...'
+            : mode === 'register' ? '회원가입' : '로그인'}
+        </button>
+        {error && <div className="auth-error">{error}</div>}
+        <button
+          type="button"
+          className="auth-link"
+          onClick={() => setMode((m) => (m === 'register' ? 'login' : 'register'))}
+        >
+          {mode === 'register' ? '이미 회원이신가요? 로그인' : '회원가입'}
+        </button>
+      </form>
+    </>
+  );
+}
+

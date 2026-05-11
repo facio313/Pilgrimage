@@ -27,9 +27,10 @@ db.sqlite3
 media/
 staticfiles/
 
-# Node / React / Vite
+# Node / Vite (`frontend/`)
 node_modules/
 frontend/dist/
+frontend/dist-ssr/
 .pnp.*
 *.tsbuildinfo
 
@@ -37,7 +38,8 @@ frontend/dist/
 .docker/
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.iml
 *.iws
@@ -45,11 +47,22 @@ frontend/dist/
 out/
 *.swp
 *.swo
+*.sw?
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
-# Cursor
-.cursor/
-.cursorignore
+# Agent
+# CLAUDE.md
+# AGENT.md
+
+# Cursor — 로컬 캐시는 무시, 공유 규칙은 커밋
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 .cursorules
+# .cursorignore
 
 # Claude Code
 .claude/settings.local.json
@@ -72,7 +85,9 @@ $RECYCLE.BIN/
 
 # Logs
 logs/
-*.log
+logs
+pnpm-debug.log*
+lerna-debug.log*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

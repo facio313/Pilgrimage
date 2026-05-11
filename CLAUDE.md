@@ -28,7 +28,7 @@
 
 ## Current Progress
 
-> Last updated: 2026-05-05
+> Last updated: 2026-05-06
 > Goal: Prototype-first — build a working dev version, then migrate to production
 
 > **No Docker in development** — PostgreSQL, Redis, Django, Vite all run locally. Docker only for Phase 4.
@@ -36,10 +36,11 @@
 ### Phase 1 · Development Environment Setup
 | Item | Status |
 |------|--------|
-| Design/planning (feature specs F01–F09, DB schema, API spec) | ⬜ Pending |
-| `.env.example`, `.gitignore`, GitHub Actions | ⬜ Pending |
-| `pyproject.toml` + `package.json` init | ⬜ Pending |
-| Local PostgreSQL (PostGIS) + Redis install and DB creation | ⬜ Pending |
+| Design/planning (feature specs F01–F09, DB schema, API spec) | ✅ Done |
+| `.env`, `.gitignore` | ✅ Done |
+| `pyproject.toml` + `package.json` init | ✅ Done |
+| Local PostgreSQL (PostGIS) + Redis install and DB creation | ✅ Done |
+| GitHub Actions (`ci.yml`, `deploy.yml`) | ⬜ Pending |
 
 ### Phase 2 · Implementation
 > Read before coding: [`specs/functions.md`](specs/functions.md) · [`specs/schema.md`](specs/schema.md) · [`specs/api.md`](specs/api.md)
@@ -73,7 +74,7 @@
 
 | # | Action | Reason |
 |---|--------|--------|
-| 1 | Commit `.env` | Leaks API keys — only `.env.example` is committed |
+| 1 | Commit `.env` | Leaks API keys |
 | 2 | Load Kakao Maps SDK via `<script>` in `index.html` | Use singleton loader at `src/lib/kakaoLoader.ts` only |
 | 3 | Mix up PostGIS / Kakao coordinate order | PostGIS: `Point(lng, lat)`, Kakao: `LatLng(lat, lng)` |
 | 4 | Allow review without GPS verification | Only when `VisitLog.status == "CERTIFIED"` (serializer check) |
@@ -268,7 +269,7 @@ cd frontend && VITE_KAKAO_JS_KEY=dummy node_modules/.bin/vite build
 | `RPI5_HOST` | backend | RPi5 IP/domain |
 | `RPI5_USER` | backend | SSH username |
 
-> Never commit `.env`. Only `.env.example` is committed.
+> Never commit `.env`.
 
 ---
 

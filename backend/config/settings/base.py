@@ -23,7 +23,16 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",
+    # Local apps
+    "apps.users",
+    "apps.spots",
+    "apps.routes",
+    "apps.visits",
+    "apps.reviews",
+    "apps.kto_sync",
 ]
+
+AUTH_USER_MODEL = "users.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -89,6 +98,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "EXCEPTION_HANDLER": "common.exceptions.custom_exception_handler",
 }
 
 # SimpleJWT
