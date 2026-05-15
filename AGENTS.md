@@ -1,4 +1,4 @@
-# Pilgrimage — CLAUDE.md
+# Pilgrimage — AGENTS.md
 
 > 2026 Korean Tourism Data Competition — Web/App Development
 > Personalized Tourism Route Platform (GPS Verification + KTO OpenAPI)
@@ -67,50 +67,6 @@
 | `docker-compose.prod.yml` | ⬜ Pending |
 | Dockerfile (backend, frontend) ARM64 optimization | ⬜ Pending |
 | GitHub Actions deploy.yml (ghcr.io → RPi5 SSH) secrets | ⬜ Pending |
-
----
-
-## Branch Strategy
-
-### Worktree Layout
-
-| Directory | Branch | AI Tool |
-|-----------|--------|---------|
-| `Pilgrimage/` (main repo) | `main` | — (release baseline) |
-| `Pilgrimage-codex/` | `codex` | OpenAI Codex |
-| `Pilgrimage-cursor/` | `cursor` | Cursor |
-| `Pilgrimage-anthropic/` | `anthropic` | Claude Code |
-
-### Flow
-
-```
-codex/feature-name ──┐
-cursor/feature-name ─┤→ {tool} → dev → main
-anthropic/feat-name ─┘
-```
-
-1. Branch off from the tool branch for any new feature:
-   ```bash
-   git checkout -b codex/spot-filter codex
-   ```
-2. Merge completed feature back into the tool branch:
-   ```bash
-   git checkout codex && git merge codex/spot-filter
-   ```
-3. Merge tool branch into `dev` after validation:
-   ```bash
-   git checkout dev && git merge codex
-   ```
-4. Merge `dev` into `main` only after full verification:
-   ```bash
-   git checkout main && git merge dev
-   ```
-
-### Naming Rules
-
-- Tool branches: `codex`, `cursor`, `anthropic` (no `/main` suffix)
-- Feature branches: `{tool}/{kebab-case-feature}` — e.g. `codex/gps-verify`, `cursor/route-save`
-- English kebab-case only. No Korean branch names.
 
 ---
 
@@ -314,6 +270,47 @@ cd frontend && VITE_KAKAO_JS_KEY=dummy node_modules/.bin/vite build
 | `RPI5_USER` | backend | SSH username |
 
 > Never commit `.env`.
+
+---
+
+## Branch Strategy
+
+### Worktree Layout
+
+| Directory | Branch | AI Tool |
+|-----------|--------|---------|
+| `Pilgrimage/` (main repo) | `main` | — (release baseline) |
+| `Pilgrimage-codex/` | `codex` | OpenAI Codex |
+| `Pilgrimage-cursor/` | `cursor` | Cursor |
+| `Pilgrimage-anthropic/` | `anthropic` | Claude Code |
+
+### Flow
+
+```
+codex/feature-name ──┐
+cursor/feature-name ─┤→ {tool} → dev → main
+anthropic/feat-name ─┘
+```
+
+1. Branch off the tool branch for any new feature:
+   ```bash
+   git checkout -b codex/spot-filter codex
+   ```
+2. Merge completed feature back into the tool branch:
+   ```bash
+   git checkout codex && git merge codex/spot-filter
+   ```
+3. Merge tool branch into `dev` after validation:
+   ```bash
+   git checkout dev && git merge codex
+   ```
+4. Merge `dev` into `main` after full verification only.
+
+### Naming Rules
+
+- Tool branches: `codex`, `cursor`, `anthropic`
+- Feature branches: `{tool}/{kebab-case-feature}` — e.g. `codex/gps-verify`
+- English kebab-case only.
 
 ---
 

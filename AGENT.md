@@ -134,6 +134,50 @@
 
 ---
 
+## 브랜치 전략
+
+### 워크트리 구성
+
+| 폴더 | 브랜치 | AI 툴 |
+|------|--------|-------|
+| `Pilgrimage/` (메인) | `main` | — (릴리즈 기준) |
+| `Pilgrimage-codex/` | `codex` | OpenAI Codex |
+| `Pilgrimage-cursor/` | `cursor` | Cursor |
+| `Pilgrimage-anthropic/` | `anthropic` | Claude Code |
+
+### 브랜치 흐름
+
+```
+codex/feature-name ──┐
+cursor/feature-name ─┤→ {tool} → dev → main
+anthropic/feat-name ─┘
+```
+
+1. **기능 브랜치 생성** — 각 툴 브랜치에서 분기
+   ```bash
+   git checkout -b codex/spot-filter codex
+   ```
+2. **기능 완료 후** — 해당 툴 브랜치에 머지
+   ```bash
+   git checkout codex && git merge codex/spot-filter
+   ```
+3. **검증 완료 후** — `dev`로 머지 (다른 툴 브랜치도 동일)
+   ```bash
+   git checkout dev && git merge codex
+   ```
+4. **이상 없으면** — `main`으로 머지
+   ```bash
+   git checkout main && git merge dev
+   ```
+
+### 브랜치 네이밍 규칙
+
+- 툴 기준 브랜치: `codex`, `cursor`, `anthropic`
+- 기능 브랜치: `{tool}/{kebab-case-feature}` (예: `codex/gps-verify`, `cursor/route-save`)
+- 영문 kebab-case만 사용. 한국어 브랜치명 금지.
+
+---
+
 ## 상세 레퍼런스
 
 | 내용 | 문서 |

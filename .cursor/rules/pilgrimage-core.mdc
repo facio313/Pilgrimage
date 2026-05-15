@@ -13,3 +13,4 @@ alwaysApply: true
 - **리뷰**: `VisitLog.status == "CERTIFIED"`일 때만 생성 허용.
 - **`GET /api/shared/{token}/`**: 인증 없음 (`AllowAny`). 실시간 KTO 호출 없이 배치/캐시 전략 준수 (`specs/api.md`).
 - **`.env` 커밋 금지**. 키 하드코딩 금지.
+- **브랜치 전략**: 기능 → `cursor/feature` → `cursor` → `dev` → `main`. 브랜치명 영문 kebab-case만. 이 worktree는 `cursor` 브랜치 (`Pilgrimage-cursor/`).
