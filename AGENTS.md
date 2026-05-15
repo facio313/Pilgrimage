@@ -5,6 +5,43 @@
 
 ---
 
+## ⚠️ Agent Authority Boundaries — MUST READ FIRST
+
+### 1. Branch Scope per Agent
+
+Each AI agent may only work within its own tool branch and below.
+**`main` and `dev` branches are managed exclusively by the user.**
+
+| Branch | Who controls it |
+|--------|----------------|
+| `main` | User only |
+| `dev` | User only |
+| `anthropic` | Claude Code (this agent) |
+| `cursor` | Cursor |
+| `codex` | OpenAI Codex |
+| `{tool}/feature-*` | Each respective agent |
+
+- Agents **must not** commit, merge, or push to `main` or `dev` without an explicit user request.
+- When the user explicitly asks, agents may assist with `main`/`dev` operations.
+
+### 2. Shared Project Information → Always Update `AGENTS.md`
+
+If a change affects project-wide rules, constraints, architecture, or any information that all agents should know:
+
+> **Update `AGENTS.md` — not individual tool config files.**
+
+Individual files (`CLAUDE.md`, `.cursor/rules/`, etc.) are thin wrappers that reference `AGENTS.md`.
+Editing only a tool-specific file means the other agents will miss the update.
+
+| Type of change | Where to update |
+|----------------|----------------|
+| Project rules, domain logic, API spec, constraints | `AGENTS.md` ✅ |
+| Claude Code-only settings | `.claude/` |
+| Cursor rule formatting / always-apply tweaks | `.cursor/rules/pilgrimage-core.mdc` |
+| Codex-only instructions | `AGENTS.md` (Codex reads this directly) |
+
+---
+
 ## Behavioral guidelines
 
 - **Always respond in Korean**, regardless of the language used in files or code.
