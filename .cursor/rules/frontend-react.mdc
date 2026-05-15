@@ -1,0 +1,13 @@
+---
+description: Pilgrimage 프론트 — React/Vite, 카카오맵, GPS UX
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# Frontend
+
+- Kakao Maps JS는 **`src/lib/kakaoLoader.ts`** 로만 로드. `index.html` 스크립트 태그 추가 금지.
+- Geolocation·체류 검증: **HTTPS**(또는 secure context). F04: 탭 포그라운드·Page Visibility·이탈 시 `beforeunload` 경고 등 스펙과 맞출 것 (`specs/functions.md`).
+- API 베이스 URL·카카오 키는 **`import.meta.env` / `.env`** (Vite `VITE_*`).
+- 상태: Zustand(인증·루트 드래프트), 서버 상태는 TanStack Query. 타입·네이밍은 **camelCase**.
+- **버전**: React 19, Vite 8, TypeScript 6, react-router-dom 7, vitest 4.

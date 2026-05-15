@@ -1,0 +1,16 @@
+---
+description: Pilgrimage 백엔드 — GeoDjango, DRF, KTO 클라이언트
+globs: backend/**/*.py
+alwaysApply: false
+---
+
+# Backend
+
+- 좌표 컬럼: `GEOMETRY(Point, 4326)`. `tourist_spots.location`, `gps_logs.location` 등 **GiST** 인덱스 (`specs/schema.md`).
+- 근접 쿼리: F02 기준 **5km** `ST_DWithin` 등 스펙과 일치시킨다 (`specs/functions.md`).
+- API 오류: `{"error": {"code", "message", "detail"}}` (`specs/api.md`). 성공은 DRF 기본.
+- KTO: `ServiceKey`는 환경 변수. **httpx 동기** 클라이언트(Celery/동기 컨텍스트). 타임아웃·재시도는 `specs/api.md` 준수.
+- 프로토타입: `manage.py sync_spots` 수동; 운영 단계에서만 스케줄 배치·Redis 캐시 전제.
+- `gps_logs`: 인증 후 데이터 최소화 — **인증 30일 후 자동 삭제** 스펙 (`specs/schema.md`).
+- `reviews.visit_log_id`: **UNIQUE** (인증 방문당 리뷰 1건).
+- Google Places 프록시 (`common/places.py`): `GOOGLE_PLACES_KEY` 환경 변수. 인증 없이 AllowAny.
