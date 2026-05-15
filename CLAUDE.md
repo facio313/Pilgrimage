@@ -77,9 +77,9 @@
 | Directory | Branch | AI Tool |
 |-----------|--------|---------|
 | `Pilgrimage/` (main repo) | `main` | — (release baseline) |
-| `Pilgrimage-codex/` | `codex` | OpenAI Codex |
-| `Pilgrimage-cursor/` | `cursor` | Cursor |
-| `Pilgrimage-anthropic/` | `anthropic` | Claude Code |
+| `Pilgrimage/worktrees/codex/` | `codex` | OpenAI Codex |
+| `Pilgrimage/worktrees/cursor/` | `cursor` | Cursor |
+| `Pilgrimage/worktrees/anthropic/` | `anthropic` | Claude Code |
 
 ### Flow
 
