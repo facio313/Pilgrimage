@@ -13,3 +13,16 @@ alwaysApply: true
 - **리뷰**: `VisitLog.status == "CERTIFIED"`일 때만 생성 허용.
 - **`GET /api/shared/{token}/`**: 인증 없음 (`AllowAny`). 실시간 KTO 호출 없이 배치/캐시 전략 준수 (`specs/api.md`).
 - **`.env` 커밋 금지**. 키 하드코딩 금지.
+
+## 브랜치 전략 (Gitflow)
+
+```
+main  ←  dev  ←  cursor/main  ←  cursor/<feature>
+                  anthropic/main  ←  anthropic/<feature>
+                  codex/main  ←  codex/<feature>
+```
+
+- Cursor는 **`cursor/main`** 에 상주. 기능 브랜치: `cursor/<feature-name>`.
+- 다른 에이전트 네임스페이스(`anthropic/*`, `codex/*`) 브랜치 **수정 금지**.
+- `main`, `dev`에 직접 커밋 금지 — PR 경유 필수.
+- 병합 방향: `cursor/<feature>` → `cursor/main` → `dev` → `main`.

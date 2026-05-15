@@ -11,6 +11,31 @@
 
 ---
 
+## 브랜치 전략 (Gitflow)
+
+### 구조
+
+```
+main                    ← 배포 기준 (직접 커밋 금지)
+└── dev                 ← 통합 브랜치
+    ├── anthropic/main  ← Claude 에이전트 상주 브랜치
+    │   └── anthropic/<feature>
+    ├── cursor/main     ← Cursor 에이전트 상주 브랜치
+    │   └── cursor/<feature>
+    └── codex/main      ← Codex 에이전트 상주 브랜치
+        └── codex/<feature>
+```
+
+### 각 에이전트 공통 규칙
+
+1. 본인 네임스페이스(`anthropic/*`, `cursor/*`, `codex/*`) 브랜치만 생성·수정한다.
+2. 기능 브랜치 네이밍: `<agent>/<kebab-case-feature>` (예: `anthropic/spot-detail-ui`)
+3. 병합 방향: `<agent>/<feature>` → `<agent>/main` → `dev` → `main`
+4. `main`과 `dev`에 직접 커밋 금지 — PR 경유 필수.
+5. 다른 에이전트 네임스페이스 브랜치는 읽기만 허용, 수정 금지.
+
+---
+
 ## 에이전트 워크플로
 
 1. **요구가 모호하면** 코드를 쓰기 전에 사용자에게 질문한다. 추측으로 범위를 넓히지 않는다.
@@ -118,7 +143,7 @@
 ## 스택 요약
 
 - **백엔드**: Python 3.13, Django 5.2, GeoDjango/PostGIS, DRF, (Phase 4) Celery·beat, httpx·tenacity, psycopg, uv
-- **프론트엔드**: React 19, Vite 6, TypeScript 5, Zustand, TanStack Query v5, Axios, react-router-dom v6, Kakao Maps JS v3 (`kakaoLoader` 경유)
+- **프론트엔드**: React 19, Vite 8, TypeScript 6, Zustand, TanStack Query v5, Axios, react-router-dom v7, Kakao Maps JS v3 (`kakaoLoader` 경유), vitest 4
 
 디렉터리 구조·환경 변수 표·로컬 실행 순서·자주 쓰는 명령은 [`CLAUDE.md`](CLAUDE.md)의 해당 절을 기준으로 유지한다.
 

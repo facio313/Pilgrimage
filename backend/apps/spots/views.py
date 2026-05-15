@@ -2,10 +2,10 @@ import math
 
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from common.themes import THEME_CHOICES
@@ -68,6 +68,37 @@ class SpotViewSet(
 ):
     queryset = TouristSpot.objects.all()
     permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    def create(self, request):
+        name = (request.data.get('name') or '').strip()
+        address = (request.data.get('address') or '').strip()
+        category = (request.data.get('category') or '').strip()
+        external_id = (request.data.get('external_id') or '').strip()
+        try:
+            lat = float(request.data['lat'])
+            lng = float(request.data['lng'])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValidationError({'lat': 'lat and lng are required'}) from exc
+        if not name:
+            raise ValidationError({'name': 'name is required'})
+        if not external_id:
+            external_id = f'kakao:{lat:.6f}:{lng:.6f}'
+        spot, _ = TouristSpot.objects.get_or_create(
+            external_id=external_id,
+            defaults={
+                'name': name,
+                'location': Point(float(lng), float(lat), srid=4326),
+                'address': address,
+                'category': category,
+                'theme_tags': [],
+            },
+        )
+        return Response(SpotListSerializer(spot).data, status=status.HTTP_200_OK)
 
     def get_serializer_class(self):
         if self.action == "retrieve":

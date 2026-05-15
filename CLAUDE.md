@@ -26,9 +26,44 @@
 
 ---
 
+## Branch Strategy (Gitflow)
+
+> 에이전트별 독립 브랜치 운영 — 서로의 작업이 충돌하지 않도록 한다.
+
+### 브랜치 구조
+
+```
+main                    ← 배포 가능한 안정 버전 (직접 커밋 금지)
+└── dev                 ← 통합 브랜치 (각 에이전트 main → 여기로 PR)
+    ├── anthropic/main  ← Claude (Anthropic) 에이전트 작업 기준
+    │   └── anthropic/<feature>  ← 기능 개발 브랜치
+    ├── cursor/main     ← Cursor 에이전트 작업 기준
+    │   └── cursor/<feature>
+    └── codex/main      ← Codex 에이전트 작업 기준
+        └── codex/<feature>
+```
+
+### 규칙
+
+| 규칙 | 내용 |
+|------|------|
+| 기준 브랜치 | Claude는 항상 `anthropic/main`에서 작업 |
+| 기능 브랜치 | `anthropic/<feature-name>` 형식으로 생성 (예: `anthropic/gps-cert`) |
+| 병합 방향 | `anthropic/<feature>` → `anthropic/main` → `dev` → `main` |
+| `main` 직접 커밋 | 금지 — 반드시 PR 경유 |
+| 다른 에이전트 브랜치 | 수정 금지 (`cursor/*`, `codex/*` 에는 손대지 않는다) |
+
+### 현재 내 브랜치
+
+```
+anthropic/main  ← Claude가 상주하는 브랜치 (현재 체크아웃)
+```
+
+---
+
 ## Current Progress
 
-> Last updated: 2026-05-06
+> Last updated: 2026-05-12
 > Goal: Prototype-first — build a working dev version, then migrate to production
 
 > **No Docker in development** — PostgreSQL, Redis, Django, Vite all run locally. Docker only for Phase 4.
@@ -47,18 +82,18 @@
 
 | Item | Status |
 |------|--------|
-| DB models and migrations (GeoDjango, PointField) | ⬜ Pending |
-| KTO OpenAPI module (kto_sync, manual `manage.py sync_spots`) | ⬜ Pending |
-| Core business logic (route planning, GPS verification, scoring) | ⬜ Pending |
-| DRF API layer (ViewSet, Serializer, Permission) | ⬜ Pending |
-| Security and error handling (JWT, CORS, file validation) | ⬜ Pending |
-| React 19 frontend (map, GPS hook, pages) | ⬜ Pending |
+| DB models and migrations (GeoDjango, PointField) | ✅ Done |
+| KTO OpenAPI module (kto_sync, manual `manage.py sync_spots`) | ✅ Done |
+| Core business logic (route planning, GPS verification, scoring) | ✅ Done |
+| DRF API layer (ViewSet, Serializer, Permission) | ✅ Done |
+| Security and error handling (JWT, CORS, file validation) | ✅ Done |
+| React 19 frontend (map, GPS hook, pages) | ✅ Done |
 
 ### Phase 3 · Testing
 | Item | Status |
 |------|--------|
-| pytest-django (route algorithm, GPS verification, scoring) | ⬜ Pending |
-| vitest (Kakao map hook, GPS tracking hook) | ⬜ Pending |
+| pytest-django (route algorithm, GPS verification, scoring) | 🔧 In progress (test stubs exist) |
+| vitest (Kakao map hook, GPS tracking hook) | 🔧 In progress (useKakaoMap, useGpsTracking tests exist) |
 
 ### Phase 4 · Production Environment
 | Item | Status |
@@ -106,13 +141,14 @@
 | Library | Version | Purpose |
 |---------|---------|---------|
 | React | 19 | UI |
-| Vite | 6 | Build tool |
-| TypeScript | 5 | Type safety |
+| Vite | 8 | Build tool |
+| TypeScript | 6 | Type safety |
 | Zustand | 5 | Global state (auth, route draft) |
 | TanStack Query | v5 | Server state / caching |
 | Axios | 1.7 | HTTP client |
-| react-router-dom | 6 | SPA routing |
+| react-router-dom | 7 | SPA routing |
 | Kakao Maps JS API v3 | - | Map (dynamic SDK loading) |
+| vitest | 4 | Unit / hook testing |
 
 ---
 
@@ -129,6 +165,7 @@ Pilgrimage/
 │   ├── common/
 │   │   ├── exceptions.py    # {"error": {"code", "message"}} format
 │   │   ├── health.py        # GET /api/health/
+│   │   ├── places.py        # Google Places API proxy (nearby, reviews)
 │   │   └── themes.py        # theme ↔ contentTypeId mapping
 │   └── apps/
 │       ├── users/           # AbstractUser, JWT auth
@@ -142,9 +179,9 @@ Pilgrimage/
 │   └── src/
 │       ├── api/             # client.ts, spots/routes/visits/reviews.ts
 │       ├── hooks/           # useKakaoMap, useGpsTracking
-│       ├── pages/           # HomePage, ThemeSelectPage, MapPage,
-│       │                    # RouteSavePage, VisitPage, ReviewPage,
-│       │                    # SharedRoutePage
+│       ├── pages/           # MapPage, ThemeSelectPage, AutoRoutePage,
+│       │                    # SpotDetailPage, RouteSavePage, VisitPage,
+│       │                    # ReviewPage, SharedRoutePage
 │       ├── store/           # auth.ts (JWT), route.ts (route draft)
 │       └── lib/             # kakaoLoader.ts (singleton SDK loader)
 ├── specs/                   # Feature specs, DB schema, API reference
@@ -266,6 +303,7 @@ cd frontend && VITE_KAKAO_JS_KEY=dummy node_modules/.bin/vite build
 | `KAKAO_JS_KEY` | backend | Kakao JS API key (server-side reference) |
 | `VITE_KAKAO_JS_KEY` | frontend | Kakao JS API key (build-time injection) |
 | `VITE_API_BASE_URL` | frontend | `/api` |
+| `GOOGLE_PLACES_KEY` | backend | Google Places API key (nearby/reviews proxy) |
 | `RPI5_HOST` | backend | RPi5 IP/domain |
 | `RPI5_USER` | backend | SSH username |
 
