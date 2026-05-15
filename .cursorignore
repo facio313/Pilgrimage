@@ -1,0 +1,35 @@
+# Secrets & local env (never index for AI)
+.env
+.env.*
+backend/.env
+frontend/.env
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+.uv/
+
+# Build & static artifacts
+frontend/dist/
+backend/staticfiles/
+backend/media/
+*.egg-info/
+dist/
+build/
+
+# Caches & test artifacts
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+coverage/
+
+# Logs
+*.log
+logs/
+
+# OS / editor noise
+.DS_Store
