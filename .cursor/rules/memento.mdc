@@ -1,0 +1,31 @@
+---
+description: Memento MCP 기억 도구 능동 사용 규칙
+alwaysApply: true
+---
+
+## Memento MCP — 기억 도구 사용 규칙
+
+세션 골격: `context 시작 → recall·remember 운용 → reflect 마무리`
+
+### 세션 시작
+세션 시작 시 context 도구 호출로 기억을 로드한다.
+[기억 시스템] 또는 [ANCHOR MEMORY] 섹션이 컨텍스트에 있으면 추가 호출 불필요.
+이후 사용자 첫 발화의 구체적 키워드에 대해 recall 선행 필수.
+
+### Recall-First (강제)
+답변·코드 생성 전 recall 의무 선행. 과거 참조·프로젝트명·에러·설정·절차·결정 언급 시 즉시 호출.
+침묵 호출 원칙: 사용자에게 알리지 않고 먼저 recall 수행.
+
+### Remember 필수 상황
+에러 원인(error/0.8), 해결책(procedure/0.8), 사용자 선호(preference/0.9),
+아키텍처 결정(decision/0.7), 포트·설정값(fact/0.6), 배포 절차(procedure/0.7),
+"기억해·저장해" 언급(지정 타입/1.0) → 즉시 remember 호출.
+
+### tool_feedback 의무
+recall 후 _meta.searchEventId 보관 → 답변 직후 tool_feedback 호출.
+
+### 세션 종료
+중요한 작업 결과는 reflect로 저장. 해결된 에러는 forget. 미저장 종료 금지.
+
+### 금지
+recall 없이 추측 / 사용자에게 이전 설정 되묻기 / recall 0건 즉시 포기 / _meta.suggestion 무시

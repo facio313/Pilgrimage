@@ -110,6 +110,60 @@ python3 /tmp/vowline/install.py global --harnesses core
 서버 접속에 인증 키가 필요하다. 키는 `~/memento-mcp/.env`의 `MEMENTO_ACCESS_KEY`에 저장되어 있다.
 각 에이전트 설정 파일에 `Authorization: Bearer <key>` 헤더로 등록되어 있으므로 별도 설정 불필요.
 
+### 기억 도구 사용 규칙 (모든 에이전트 절대 준수)
+
+세션 골격: **`context 시작 → recall·remember 운용 → reflect 마무리`**
+
+#### 세션 시작
+- 세션 시작 시 `context` 도구를 호출하여 기억을 로드한다 (Claude Code는 SessionStart 훅 자동 실행).
+- `[기억 시스템]` 또는 `[ANCHOR MEMORY]` 섹션이 있으면 숙지 후 추가 호출 불필요.
+- context 후에도 첫 발화의 구체적 키워드에 대해 추가 `recall` 선행 필수.
+
+#### Recall-First (강제 규약)
+답변·코드 생성 전 의무 선행 호출. 아래 신호 발생 시 즉시 호출:
+
+| 신호 | 호출 방식 |
+|------|----------|
+| "이전에", "저번에", 과거 참조 | `recall(text=내용, includeContext=true)` |
+| 프로젝트명·서비스명 등장 | `recall(topic=프로젝트명, contextText=작업 요약)` |
+| 에러·실패 보고 | `recall(type="error", keywords=[에러 키워드])` |
+| 설정·포트·환경변수 언급 | `recall(type="fact", keywords=[설정명])` |
+| 빌드·배포·테스트 절차 질문 | `recall(type="procedure", keywords=[프로젝트명])` |
+| 아키텍처·기술 결정 회상 | `recall(type="decision", topic=프로젝트명)` |
+
+**침묵 호출 원칙**: recall은 사용자에게 알리지 않고 먼저 수행. 결과 있으면 근거로 답변, 없을 때만 추가 정보 요청.
+
+#### Remember 필수 호출 상황
+
+| 상황 | type | importance |
+|------|------|-----------|
+| 에러 원인 파악 | error | 0.8 |
+| 에러 해결책 확정 | procedure | 0.8 |
+| 사용자 선호·스타일 명시 | preference | 0.9 |
+| 아키텍처·기술 스택 선택 | decision | 0.7 |
+| 서비스 경로·포트·설정값 | fact | 0.6 |
+| 배포·빌드 절차 완성 | procedure | 0.7 |
+| "기억해", "저장해" 언급 | (지정 타입) | 1.0 |
+
+#### tool_feedback 의무
+recall 후 `_meta.searchEventId` 보관 → 답변 직후 `tool_feedback` 호출 (활용 파편 relevant=true, 무관 파편 relevant=false).
+
+#### 세션 종료
+중요한 작업 결과는 `reflect`로 저장. 해결된 에러 파편은 `forget`. 미저장 종료 금지.
+
+#### 금지 행위
+- recall 없이 추측 답변 / 사용자에게 "이전 설정 알려주세요" 되묻기
+- recall 0건에서 즉시 포기 (keywords 재구성·type 제거 등 재시도 의무)
+- `_meta.suggestion.recommendedTool` 무시
+
+#### Cursor / Codex용 수동 context 호출 (세션 시작 시)
+```bash
+curl -s -X POST http://localhost:57332/mcp \
+  -H "Authorization: Bearer $(grep MEMENTO_ACCESS_KEY ~/memento-mcp/.env | cut -d= -f2)" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"context","arguments":{}}}'
+```
+
 ---
 
 ## Behavioral guidelines
