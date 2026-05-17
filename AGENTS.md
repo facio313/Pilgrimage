@@ -42,6 +42,40 @@ Editing only a tool-specific file means the other agents will miss the update.
 
 ---
 
+## Vowline
+
+<!-- vowline:start -->
+Always use the skill `vowline` consistently, including for all sub-agents.
+<!-- vowline:end -->
+
+Vowline은 에이전트가 작업을 증거 기반으로 수행하고, 결과를 공개 인터페이스로 검증하도록 강제하는 cross-cutting 운영 스킬이다.
+모든 에이전트에 전역 설치되어 있으며, 실질적인 작업(구현, 수정, 검증)에는 항상 활성화한다.
+
+### 설치 상태
+
+| 에이전트 | 전역 스킬 경로 | 활성화 방식 |
+|----------|---------------|------------|
+| Claude Code | `~/.claude/skills/vowline/` | `~/.claude/CLAUDE.md` 마커 블록 |
+| Codex | `~/.agents/skills/vowline/` | `~/.codex/AGENTS.md` 마커 블록 |
+| Cursor | `~/.cursor/skills/vowline/` | `.cursor/rules/vowline.mdc` (alwaysApply) |
+
+### 호출 방법
+
+| 에이전트 | 호출 접두어 | 예시 |
+|----------|------------|------|
+| Claude Code | `/vowline` | `/vowline fix the GPS verification service and verify it` |
+| Codex | `$vowline` | `$vowline build the route algorithm and run tests` |
+| Cursor | 자동 적용 (alwaysApply) | 별도 호출 불필요 |
+
+### 업데이트
+
+```bash
+git clone https://github.com/chojondocho/vowline.git /tmp/vowline
+python3 /tmp/vowline/install.py global --harnesses core
+```
+
+---
+
 ## Behavioral guidelines
 
 - **Always respond in Korean**, regardless of the language used in files or code.
