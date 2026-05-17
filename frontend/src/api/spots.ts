@@ -49,6 +49,18 @@ export interface NearbySpot extends Spot {
   distance_m: number;
 }
 
+export async function upsertSpot(input: {
+  name: string;
+  lat: number;
+  lng: number;
+  address?: string;
+  category?: string;
+  external_id?: string;
+}): Promise<Spot> {
+  const res = await apiClient.post<Spot>('/spots/', input);
+  return res.data;
+}
+
 export async function getNearbyRecommend(params: {
   lat: number;
   lng: number;

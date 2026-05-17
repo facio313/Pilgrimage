@@ -4,6 +4,23 @@ from django.contrib.gis.db import models as gis_models
 from django.db import models
 
 
+class GooglePlaceCache(models.Model):
+    lookup_key = models.CharField(max_length=100, unique=True, db_index=True)
+    place_id = models.CharField(max_length=200, blank=True, db_index=True)
+    name = models.CharField(max_length=300, blank=True)
+    address = models.CharField(max_length=500, blank=True)
+    rating = models.FloatField(null=True, blank=True)
+    user_rating_count = models.IntegerField(null=True, blank=True)
+    photo_url = models.TextField(blank=True)
+    google_maps_uri = models.TextField(blank=True)
+    reviews = models.JSONField(default=list)
+    reviews_fetched = models.BooleanField(default=False)
+    cached_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "google_place_cache"
+
+
 class TouristSpot(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.CharField(max_length=100, unique=True)
