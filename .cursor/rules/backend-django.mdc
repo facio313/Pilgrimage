@@ -13,3 +13,4 @@ alwaysApply: false
 - 프로토타입: `manage.py sync_spots` 수동; 운영 단계에서만 스케줄 배치·Redis 캐시 전제.
 - `gps_logs`: 인증 후 데이터 최소화 — **인증 30일 후 자동 삭제** 스펙 (`specs/schema.md`).
 - `reviews.visit_log_id`: **UNIQUE** (인증 방문당 리뷰 1건).
+- Google Places 프록시 (`common/places.py`): `GOOGLE_PLACES_KEY` 환경 변수. 인증 없이 AllowAny.
