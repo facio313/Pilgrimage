@@ -76,6 +76,42 @@ python3 /tmp/vowline/install.py global --harnesses core
 
 ---
 
+## Memento MCP
+
+에이전트 간 장기 기억을 공유하는 MCP 서버. 세션이 종료되어도 기억이 유지되며, Claude Code / Cursor / Codex 모두 동일한 서버에 연결된다.
+
+- **서버 위치**: `~/memento-mcp/` (Node.js)
+- **엔드포인트**: `http://localhost:57332/mcp`
+- **DB**: `memento` (PostgreSQL + pgvector)
+- **기동**: `nohup node ~/memento-mcp/server.js > /tmp/memento.log 2>&1 &`
+
+### 에이전트별 연결 설정
+
+| 에이전트 | 설정 파일 |
+|----------|----------|
+| Claude Code | `~/.claude.json` (user scope, `claude mcp add`로 등록) |
+| Cursor | `~/.cursor/mcp.json` |
+| Codex | `~/.codex/mcp.json` |
+
+### 기억 유형
+
+| 유형 | 용도 |
+|------|------|
+| `fact` | 설정값, 버전, 환경 정보 |
+| `decision` | 아키텍처 선택과 근거 |
+| `error` | 에러 원인과 해결 방법 |
+| `preference` | 코딩 스타일, 작업 방식 |
+| `procedure` | 배포, 테스트 등 반복 절차 |
+| `relation` | 컴포넌트 간 의존성 |
+| `episode` | 전후 맥락 포함 서사 기억 |
+
+### ACCESS_KEY
+
+서버 접속에 인증 키가 필요하다. 키는 `~/memento-mcp/.env`의 `MEMENTO_ACCESS_KEY`에 저장되어 있다.
+각 에이전트 설정 파일에 `Authorization: Bearer <key>` 헤더로 등록되어 있으므로 별도 설정 불필요.
+
+---
+
 ## Behavioral guidelines
 
 - **Always respond in Korean**, regardless of the language used in files or code.
