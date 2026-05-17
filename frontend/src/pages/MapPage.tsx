@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useKakaoMap } from '../hooks/useKakaoMap';
-import { listSpots, getNearbyRecommend, type Spot, type NearbySpot } from '../api/spots';
+import { listSpots, getNearbyRecommend, upsertSpot, type Spot, type NearbySpot } from '../api/spots';
 import { login, register } from '../api/auth';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/auth';
@@ -44,6 +44,21 @@ interface CachedPopoverData {
   extra?: PopoverExtra;
 }
 
+interface OrderedPoint {
+  lat: number;
+  lng: number;
+  name: string;
+  icon: string;
+  address: string;
+  rating: number;
+}
+
+interface RouteGroup {
+  id: string;
+  name: string;
+  points: OrderedPoint[];
+}
+
 export function MapPage() {
   const navigate = useNavigate();
   const { theme, spotIds, addSpot, removeSpot } = useRouteDraftStore();
@@ -51,6 +66,14 @@ export function MapPage() {
   const [canUseCompactNav, setCanUseCompactNav] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth <= COMPACT_NAV_MAX_WIDTH : false
   );
+  const [isRouteAdjustOpen, setIsRouteAdjustOpen] = useState(false);
+  const [isRouteAnalysisOpen, setIsRouteAnalysisOpen] = useState(false);
+  const [orderedPoints, setOrderedPoints] = useState<OrderedPoint[]>([]);
+  const [routeGroups, setRouteGroups] = useState<RouteGroup[]>([
+    { id: 'route-1', name: '경로 1', points: [] },
+  ]);
+  const [activeRouteId, setActiveRouteId] = useState('route-1');
+  const nextGroupNumRef = useRef(2);
   const { containerRef, map, error } = useKakaoMap({ center: SEOUL_CITY_HALL });
 
   useEffect(() => {
@@ -78,6 +101,7 @@ export function MapPage() {
   const overlayRef = useRef<any>(null);
   const pointOverlaysRef = useRef<PointOverlayRecord[]>([]);
   const popoverCacheRef = useRef<Map<string, CachedPopoverData>>(new Map());
+  const spotCoordsRef = useRef<Map<string, { lat: number; lng: number }>>(new Map());
   const nearbyPlaceCacheRef = useRef<Map<string, any | null>>(new Map());
   const reviewsCacheRef = useRef<Map<string, any[]>>(new Map());
 
@@ -135,14 +159,14 @@ export function MapPage() {
         pointOverlaysRef.current[idx].ringOverlay.setMap(null);
       }
       pointOverlaysRef.current.splice(idx, 1);
+      setOrderedPoints((prev) => prev.filter((p) => !(p.lat === lat && p.lng === lng)));
     }
   };
 
-  const createPointMarker = (position: any, icon: string, rating: number, name: string, address: string, extra?: PopoverExtra) => {
+  const placePointOverlay = (lat: number, lng: number, icon: string, rating: number, name: string, address: string, extra?: PopoverExtra) => {
     if (!map) return;
     const kakao = window.kakao;
-    const lat = position.getLat();
-    const lng = position.getLng();
+    const position = new kakao.maps.LatLng(lat, lng);
     const ratio = Math.min(rating / 5, 1);
     const degrees = ratio * 360;
     const el = document.createElement('div');
@@ -169,12 +193,57 @@ export function MapPage() {
     overlay.setMap(map);
     cachePopover(lat, lng, name, address, extra);
     pointOverlaysRef.current.push({ overlay, ringOverlay: null, lat, lng, name, address, icon, rating, extra });
+  };
+
+  const createPointMarker = (position: any, icon: string, rating: number, name: string, address: string, extra?: PopoverExtra) => {
+    const lat = position.getLat();
+    const lng = position.getLng();
+    placePointOverlay(lat, lng, icon, rating, name, address, extra);
+    setOrderedPoints((prev) => [...prev, { lat, lng, name, icon, address, rating }]);
     createNearbyRing(lat, lng);
   };
 
   const closeOverlay = () => {
     overlayRef.current?.setMap(null);
     overlayRef.current = null;
+  };
+
+  const clearAllPoints = () => {
+    pointOverlaysRef.current.forEach((p) => {
+      p.overlay.setMap(null);
+      if (p.ringOverlay) p.ringOverlay.setMap(null);
+    });
+    pointOverlaysRef.current = [];
+    drawLinesRef.current.forEach((l) => l.setMap(null));
+    drawLinesRef.current = [];
+    lastDrawPointRef.current = null;
+  };
+
+  const switchGroup = (newGroupId: string) => {
+    if (newGroupId === activeRouteId) return;
+    setRouteGroups((prev) =>
+      prev.map((g) => (g.id === activeRouteId ? { ...g, points: orderedPoints } : g))
+    );
+    clearAllPoints();
+    const newGroup = routeGroups.find((g) => g.id === newGroupId);
+    const newPoints = newGroup?.points ?? [];
+    setActiveRouteId(newGroupId);
+    setOrderedPoints(newPoints);
+    newPoints.forEach((p) => placePointOverlay(p.lat, p.lng, p.icon, p.rating, p.name, p.address));
+  };
+
+  const addNewGroup = () => {
+    const num = nextGroupNumRef.current++;
+    const id = `route-${num}`;
+    setRouteGroups((prev) => {
+      const saved = prev.map((g) =>
+        g.id === activeRouteId ? { ...g, points: orderedPoints } : g
+      );
+      return [...saved, { id, name: `경로 ${num}`, points: [] }];
+    });
+    clearAllPoints();
+    setActiveRouteId(id);
+    setOrderedPoints([]);
   };
 
   const CATEGORY_ICONS: Record<string, string> = {
@@ -236,9 +305,12 @@ export function MapPage() {
 
           const icon = getSpotIcon(spot);
           const score = Number(spot.avg_review_score).toFixed(1);
+          const degrees = Math.round(Math.min(Number(spot.avg_review_score) / 5, 1) * 360);
 
           item.innerHTML = `
-            <span class="nearby-ring__bubble">${icon}</span>
+            <span class="nearby-ring__ring" style="background: conic-gradient(#f5c518 0deg ${degrees}deg, #d8d8d8 ${degrees}deg 360deg)">
+              <span class="nearby-ring__bubble">${icon}</span>
+            </span>
             <span class="nearby-ring__name">${spot.name.length > 6 ? spot.name.slice(0, 6) + '…' : spot.name}</span>
             <span class="nearby-ring__score">⭐ ${score}</span>
           `;
@@ -301,23 +373,23 @@ export function MapPage() {
 
     el.innerHTML = `
       <button class="spot-popover__close" aria-label="닫기">&times;</button>
-      <div class="spot-popover__photo-slot"></div>
+      <div class="spot-popover__photo-slot"><div class="spot-popover__photo-placeholder"></div></div>
       ${categoryHtml}
-      <strong class="spot-popover__name">${name}</strong>
+      <div class="spot-popover__name-row">
+        <strong class="spot-popover__name" data-action="detail">${name}</strong><button data-action="visit" class="spot-popover__visit-badge">✓</button>
+      </div>
       <p class="spot-popover__addr">${address}</p>
       ${phoneHtml}${scoreHtml}
-      <div class="spot-popover__google"></div>
+      <div class="spot-popover__google"><span class="spot-popover__info-skel"></span></div>
       <div class="spot-popover__reviews"></div>
-      <div class="spot-popover__route-actions">
-        <button data-action="set-point">${hasPoint ? '지점 해제' : '지점 설정'}</button>
-        <button data-action="add-waypoint">경로 중간 추가</button>
-      </div>
       <div class="spot-popover__links"></div>
-      ${spot ? `<div class="spot-popover__actions">
-        <button data-action="detail">상세</button>
-        <button data-action="route" class="primary">경로에 추가</button>
-        <button data-action="visit">방문 인증</button>
-      </div>` : ''}
+      <div class="spot-popover__btn-col">
+        <button data-action="set-point" class="spot-popover__btn-primary">${hasPoint ? '지점 해제' : '지점 설정'}</button>
+        <div class="spot-popover__btn-row">
+          <button data-action="route" class="spot-popover__btn-primary">경로 추가</button>
+          <button data-action="draw-line" class="spot-popover__btn-primary">경로 그리기</button>
+        </div>
+      </div>
       <div class="spot-popover__tail"></div>
     `;
 
@@ -329,17 +401,6 @@ export function MapPage() {
     const searchQuery = encodeURIComponent(`${name} ${address}`.trim());
     const placeLookupKey = `google:v2:${nearbyCacheKey}|${searchQuery}`;
     cachePopover(lat, lng, name, address, extra);
-
-    const overlay = new kakao.maps.CustomOverlay({
-      content: el,
-      position,
-      yAnchor: 1.04,
-      xAnchor: 0.5,
-      zIndex: 20,
-      clickable: true,
-    });
-    overlay.setMap(map);
-    overlayRef.current = overlay;
 
     const isDbSpot = !!(spot && spot.id);
     const linksSlot = el.querySelector('.spot-popover__links');
@@ -353,48 +414,29 @@ export function MapPage() {
       ].join('');
     };
     renderMapLinks();
+
+    const overlay = new kakao.maps.CustomOverlay({
+      content: el,
+      position,
+      yAnchor: 1.04,
+      xAnchor: 0.5,
+      zIndex: 20,
+      clickable: true,
+    });
+    overlay.setMap(map);
+    overlayRef.current = overlay;
+
     const syncPopoverPosition = () => overlay.setPosition(position);
     window.requestAnimationFrame(syncPopoverPosition);
 
-    if (isDbSpot) {
-      const googleSlot = el.querySelector('.spot-popover__google');
-      const reviewSlot = el.querySelector('.spot-popover__reviews');
-      if (googleSlot) {
-        googleSlot.innerHTML = `<span class="spot-popover__rating-btn" data-spot-id="${spot!.id}">⭐ ${Number(spot!.avg_review_score).toFixed(1)} · 리뷰 보기 ▾</span>`;
-        const ratingBtn = googleSlot.querySelector('.spot-popover__rating-btn');
-        if (ratingBtn && reviewSlot) {
-          ratingBtn.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            if (reviewSlot.children.length > 0) {
-              reviewSlot.innerHTML = '';
-              return;
-            }
-            const cacheKey = `our:${spot!.id}`;
-            const cached = reviewsCacheRef.current.get(cacheKey);
-            if (cached) {
-              reviewSlot.innerHTML = renderOurReviews(cached);
-              return;
-            }
-            reviewSlot.innerHTML = '<p class="spot-popover__review-loading">리뷰 불러오는 중...</p>';
-            apiClient.get('/reviews/', { params: { spot_id: spot!.id } }).then((revRes) => {
-              const reviews = Array.isArray(revRes.data) ? revRes.data : revRes.data?.results || [];
-              reviewsCacheRef.current.set(cacheKey, reviews);
-              if (!reviews.length) {
-                reviewSlot.innerHTML = '<p class="spot-popover__review-empty">리뷰가 없습니다</p>';
-                return;
-              }
-              reviewSlot.innerHTML = renderOurReviews(reviews);
-            }).catch(() => {
-              reviewSlot.innerHTML = '<p class="spot-popover__review-empty">리뷰를 불러오지 못했습니다</p>';
-            });
-          });
-        }
-      }
-    }
-
     const renderGooglePlaceInfo = (place: any | null) => {
       const googleSlot = el.querySelector('.spot-popover__google');
-      if (!googleSlot || !place?.placeId) return;
+      if (!googleSlot) return;
+
+      if (!place?.placeId) {
+        googleSlot.innerHTML = '<span class="spot-popover__no-info">구글 정보를 가져올 수 없습니다</span>';
+        return;
+      }
 
       if (place.rating) placeRating = place.rating;
       googleSlot.innerHTML = `<span class="spot-popover__rating-btn" data-place-id="${place.placeId}">${place.rating ? `⭐ ${place.rating}${place.userRatingCount ? ` (${place.userRatingCount})` : ''} · ` : ''}구글 리뷰 보기 ▾</span>`;
@@ -419,28 +461,37 @@ export function MapPage() {
           const reviews = revRes.data?.reviews || [];
           reviewsCacheRef.current.set(place.placeId, reviews);
           if (!reviews.length) {
-            const debugStatus = revRes.data?._debug?.status;
-            reviewSlot.innerHTML = `<p class="spot-popover__review-empty">리뷰가 없습니다${debugStatus ? ` (API: ${debugStatus})` : ''}</p>`;
+            reviewSlot.innerHTML = '<p class="spot-popover__review-empty">등록된 리뷰가 없습니다</p>';
             return;
           }
           reviewSlot.innerHTML = renderReviews(reviews);
-        }).catch((err) => {
-          console.error('[Pilgrimage] reviews fetch error:', err);
-          reviewSlot.innerHTML = '<p class="spot-popover__review-empty">리뷰를 불러오지 못했습니다</p>';
+        }).catch(() => {
+          reviewSlot.innerHTML = '<p class="spot-popover__review-empty">리뷰를 가져올 수 없습니다</p>';
         });
       });
     };
 
     const applyNearbyPlace = (place: any | null) => {
       const photoSlot = el.querySelector('.spot-popover__photo-slot');
-      if (place?.photoUrl && photoSlot) {
-        photoSlot.innerHTML = `<img class="spot-popover__photo" src="${place.photoUrl}" alt="${place.name}" />`;
-        const img = photoSlot.querySelector('img');
-        img?.addEventListener('load', syncPopoverPosition, { once: true });
+      if (photoSlot && place?.photoUrl) {
+        const img = document.createElement('img');
+        img.className = 'spot-popover__photo';
+        img.alt = place.name ?? '';
+        img.style.opacity = '0';
+        img.addEventListener('load', () => {
+          window.requestAnimationFrame(() => { img.style.opacity = '1'; });
+        }, { once: true });
+        img.addEventListener('error', () => {
+          img.replaceWith(document.createElement('div'));
+          const ph = photoSlot.querySelector('div');
+          if (ph) ph.className = 'spot-popover__photo-placeholder';
+        }, { once: true });
+        img.src = place.photoUrl;
+        photoSlot.innerHTML = '';
+        photoSlot.appendChild(img);
       }
       renderGooglePlaceInfo(place);
       renderMapLinks(place);
-      syncPopoverPosition();
     };
 
     if (nearbyPlaceCacheRef.current.has(placeLookupKey)) {
@@ -466,28 +517,91 @@ export function MapPage() {
       if (findPointAt(lat, lng)) {
         removePointAt(lat, lng);
       } else {
+        pointOverlaysRef.current.forEach((p) => {
+          if (p.ringOverlay) {
+            p.ringOverlay.setMap(null);
+            p.ringOverlay = null;
+          }
+        });
         createPointMarker(position, icon, placeRating, name, address, extra);
       }
       closeOverlay();
     });
 
-    if (spot) {
-      const routeBtn = el.querySelector('[data-action="route"]') as HTMLButtonElement;
-      if (inRoute(spot.id)) {
-        routeBtn.textContent = '경로에서 제거';
-        routeBtn.classList.remove('primary');
-      }
-      el.querySelector('[data-action="detail"]')!.addEventListener('click', () => navigate(`/spot/${spot.id}`));
-      routeBtn.addEventListener('click', () => {
-        inRoute(spot.id) ? removeSpot(spot.id) : addSpot(spot.id);
-        closeOverlay();
-      });
-      el.querySelector('[data-action="visit"]')!.addEventListener('click', () => navigate(`/visit/${spot.id}`));
-      if (!isAuthed) {
-        routeBtn.style.display = 'none';
-        el.querySelector('[data-action="visit"]')!.setAttribute('style', 'display:none');
-      }
+    const routeBtn = el.querySelector('[data-action="route"]') as HTMLButtonElement;
+    if (spot && inRoute(spot.id)) {
+      routeBtn.textContent = '경로 제거';
+      routeBtn.classList.remove('spot-popover__btn-primary');
+      routeBtn.classList.add('spot-popover__btn-secondary');
     }
+    const visitBadge = el.querySelector('[data-action="visit"]') as HTMLElement;
+    if (!isAuthed) {
+      routeBtn.style.display = 'none';
+      visitBadge.style.display = 'none';
+    } else if (spot) {
+      apiClient.get(`/visits/${spot.id}/status/`)
+        .then((res) => {
+          if (res.data?.certified) visitBadge.classList.add('certified');
+        })
+        .catch(() => {});
+    }
+
+    const ensureSpot = async (): Promise<Spot | null> => {
+      if (spot) return spot;
+      try {
+        let external_id: string | undefined;
+        if (extra?.placeUrl) {
+          const match = extra.placeUrl.match(/\/(\d+)$/);
+          if (match) external_id = `kakao:${match[1]}`;
+        }
+        return await upsertSpot({ name, lat, lng, address, category: extra?.category, external_id });
+      } catch {
+        return null;
+      }
+    };
+
+    el.querySelector('[data-action="detail"]')!.addEventListener('click', async () => {
+      const s = await ensureSpot();
+      if (s) navigate(`/spot/${s.id}`);
+    });
+    routeBtn.addEventListener('click', async () => {
+      const s = await ensureSpot();
+      if (s) {
+        if (inRoute(s.id)) {
+          removeSpot(s.id);
+        } else {
+          addSpot(s.id);
+          spotCoordsRef.current.set(s.id, { lat, lng });
+        }
+      }
+      closeOverlay();
+    });
+    el.querySelector('[data-action="draw-line"]')!.addEventListener('click', () => {
+      const currentLat = position.getLat();
+      const currentLng = position.getLng();
+      if (lastDrawPointRef.current) {
+        const kakao = window.kakao;
+        const line = new kakao.maps.Polyline({
+          map,
+          path: [
+            new kakao.maps.LatLng(lastDrawPointRef.current.lat, lastDrawPointRef.current.lng),
+            new kakao.maps.LatLng(currentLat, currentLng),
+          ],
+          strokeWeight: 3,
+          strokeColor: '#34a853',
+          strokeOpacity: 0.9,
+          strokeStyle: 'dashed',
+        });
+        drawLinesRef.current.push(line);
+      }
+      lastDrawPointRef.current = { lat: currentLat, lng: currentLng };
+      closeOverlay();
+    });
+
+    el.querySelector('[data-action="visit"]')!.addEventListener('click', async () => {
+      const s = await ensureSpot();
+      if (s) navigate(`/visit/${s.id}`);
+    });
 
   };
 
@@ -647,8 +761,19 @@ export function MapPage() {
   }, [map, spots]);
 
   const polylineRef = useRef<any>(null);
+  const setPointsPolylineRef = useRef<any>(null);
+  const lastDrawPointRef = useRef<{ lat: number; lng: number } | null>(null);
+  const drawLinesRef = useRef<any[]>([]);
   const selectedSpotsOrdered = useMemo(
-    () => spotIds.map((id) => spots.find((s) => s.id === id)).filter((s): s is Spot => !!s),
+    () =>
+      spotIds
+        .map((id) => {
+          const fromList = spots.find((s) => s.id === id);
+          if (fromList) return fromList;
+          const coord = spotCoordsRef.current.get(id);
+          return coord ? ({ id, lat: coord.lat, lng: coord.lng } as unknown as Spot) : null;
+        })
+        .filter((s): s is Spot => !!s),
     [spotIds, spots]
   );
   useEffect(() => {
@@ -667,6 +792,23 @@ export function MapPage() {
       strokeOpacity: 0.8,
     });
   }, [map, selectedSpotsOrdered]);
+
+  useEffect(() => {
+    if (!map) return;
+    if (setPointsPolylineRef.current) {
+      setPointsPolylineRef.current.setMap(null);
+      setPointsPolylineRef.current = null;
+    }
+    if (orderedPoints.length < 2) return;
+    const kakao = window.kakao;
+    setPointsPolylineRef.current = new kakao.maps.Polyline({
+      map,
+      path: orderedPoints.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
+      strokeWeight: 3,
+      strokeColor: '#ff6b35',
+      strokeOpacity: 0.85,
+    });
+  }, [map, orderedPoints]);
 
   if (error) {
     return <div style={{ padding: 16, color: '#c00' }}>지도를 불러오지 못했습니다: {error.message}</div>;
@@ -687,17 +829,21 @@ export function MapPage() {
           <div className="map-header__stage" key={isAuthed ? 'menu' : 'auth'}>
             {isAuthed ? (
               <MenuRow
-                theme={theme}
-                spotCount={spotIds.length}
-                isLoading={isLoading}
                 isCompact={isCompact}
                 map={map}
                 userEmail={userEmail}
                 userNickname={userNickname}
+                routeGroups={routeGroups}
+                activeRouteId={activeRouteId}
+                spotCount={spotIds.length}
+                onSwitchGroup={switchGroup}
+                onAddGroup={addNewGroup}
                 onTheme={() => navigate('/themes')}
                 onAuto={() => navigate('/route/auto')}
                 onSave={() => navigate('/route/save')}
                 onLogout={clear}
+                onRouteAdjust={() => setIsRouteAdjustOpen((v) => !v)}
+                onRouteAnalysis={() => setIsRouteAnalysisOpen((v) => !v)}
               />
             ) : (
               <AuthInline />
@@ -705,30 +851,68 @@ export function MapPage() {
           </div>
         </header>
         {isAuthed && <SearchBar map={map} />}
+        {isAuthed && !isCompact && (
+          <div className="map-toolbar">
+            <div className="map-toolbar__left">
+              <button onClick={() => navigate('/themes')}>테마</button>
+              <button onClick={() => navigate('/route/auto')}>자동 추천</button>
+              <button onClick={() => setIsRouteAdjustOpen((v) => !v)}>경로 조정</button>
+              <button onClick={() => setIsRouteAnalysisOpen((v) => !v)}>경로 분석</button>
+              {spotIds.length > 0 && (
+                <button className="primary" onClick={() => navigate('/route/save')}>
+                  저장 ({spotIds.length})
+                </button>
+              )}
+            </div>
+            <div className="map-toolbar__right">
+              <button onClick={clear}>로그아웃</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 팝오버는 Kakao CustomOverlay로 지도 위에 직접 표시됨 */}
+
+      {isRouteAdjustOpen && (
+        <RouteAdjustPanel
+          points={orderedPoints}
+          onReorder={setOrderedPoints}
+          onClose={() => setIsRouteAdjustOpen(false)}
+        />
+      )}
+      {isRouteAnalysisOpen && (
+        <RouteAnalysisPanel
+          points={orderedPoints}
+          onClose={() => setIsRouteAnalysisOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
 interface MenuRowProps {
-  theme: string | null;
-  spotCount: number;
-  isLoading: boolean;
   isCompact: boolean;
   map: any;
   userEmail: string | null;
   userNickname: string | null;
+  routeGroups: RouteGroup[];
+  activeRouteId: string;
+  spotCount: number;
+  onSwitchGroup: (id: string) => void;
+  onAddGroup: () => void;
   onTheme: () => void;
   onAuto: () => void;
   onSave: () => void;
   onLogout: () => void;
+  onRouteAdjust: () => void;
+  onRouteAnalysis: () => void;
 }
 
 function MenuRow({
-  theme, spotCount, isLoading, isCompact, map, userEmail, userNickname,
-  onTheme, onAuto, onSave, onLogout,
+  isCompact, map, userEmail, userNickname,
+  routeGroups, activeRouteId, spotCount,
+  onSwitchGroup, onAddGroup,
+  onTheme, onAuto, onSave, onLogout, onRouteAdjust, onRouteAnalysis,
 }: MenuRowProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isDrawerClosing, setIsDrawerClosing] = useState(false);
@@ -784,6 +968,21 @@ function MenuRow({
 
   const display = userNickname || userEmail || '?';
   const initial = display.trim().charAt(0).toUpperCase() || '?';
+
+  const routeSelect = (
+    <div className="map-header__route-select">
+      <select
+        value={activeRouteId}
+        onChange={(e) => onSwitchGroup(e.target.value)}
+      >
+        {routeGroups.map((g) => (
+          <option key={g.id} value={g.id}>{g.name}</option>
+        ))}
+      </select>
+      <button type="button" className="route-add-btn" onClick={onAddGroup}>+</button>
+    </div>
+  );
+
   const drawer =
     isCompact && (isDrawerOpen || isDrawerClosing) && typeof document !== 'undefined'
       ? createPortal(
@@ -796,8 +995,11 @@ function MenuRow({
                   &times;
                 </button>
               </div>
+              {routeSelect}
               <button onClick={() => { closeDrawer(); onTheme(); }}>테마 선택</button>
               <button onClick={() => { closeDrawer(); onAuto(); }}>자동 추천</button>
+              <button onClick={() => { closeDrawer(); onRouteAdjust(); }}>경로 조정</button>
+              <button onClick={() => { closeDrawer(); onRouteAnalysis(); }}>경로 분석</button>
               {spotCount > 0 && (
                 <button onClick={() => { closeDrawer(); onSave(); }}>
                   루트 저장 ({spotCount})
@@ -811,6 +1013,7 @@ function MenuRow({
           document.body
         )
       : null;
+
   const profileBlock = (
     <div className="profile-block map-header__profile">
       <div className="profile-info">
@@ -842,26 +1045,10 @@ function MenuRow({
         <span />
       </button>
       <div className="map-header__brand">
-        <span className="map-header__title">
-          Pilgrimage
-          {!isCompact && theme && (
-            <span style={{ marginLeft: 10, fontSize: 12, color: '#666', fontWeight: 400 }}>
-              · {theme} · {spotCount}개{isLoading ? ' · 로딩...' : ''}
-            </span>
-          )}
-        </span>
+        <span className="map-header__title">Pilgrimage</span>
         {!isCompact && profileBlock}
       </div>
-      <nav className="map-header__nav">
-        <button onClick={onTheme}>테마</button>
-        <button onClick={onAuto}>자동 추천</button>
-        {spotCount > 0 && (
-          <button className="primary" onClick={onSave}>
-            저장 ({spotCount})
-          </button>
-        )}
-        {!isCompact && <button onClick={onLogout}>로그아웃</button>}
-      </nav>
+      {!isCompact && routeSelect}
       {isCompact && <SearchBar map={map} className="map-search--inline" />}
       {isCompact && profileBlock}
       {drawer}
@@ -978,6 +1165,142 @@ function AuthInline() {
         </button>
       </form>
     </>
+  );
+}
+
+interface RouteAdjustPanelProps {
+  points: OrderedPoint[];
+  onReorder: (next: OrderedPoint[]) => void;
+  onClose: () => void;
+}
+
+const TRANSPORT_MODES = [
+  { key: 'walk',    label: '도보',     icon: '🚶' },
+  { key: 'bike',    label: '자전거',   icon: '🚲' },
+  { key: 'car',     label: '자동차',   icon: '🚗' },
+  { key: 'transit', label: '대중교통', icon: '🚌' },
+] as const;
+
+type TransportKey = typeof TRANSPORT_MODES[number]['key'];
+
+interface RouteAnalysisPanelProps {
+  points: OrderedPoint[];
+  onClose: () => void;
+}
+
+function RouteAnalysisPanel({ points, onClose }: RouteAnalysisPanelProps) {
+  const [segmentModes, setSegmentModes] = useState<Record<number, TransportKey>>({});
+
+  const segments = points.length >= 2
+    ? points.slice(0, -1).map((p, i) => ({ from: p, to: points[i + 1], index: i }))
+    : [];
+
+  const allSelected = segments.length > 0 && segments.every((s) => segmentModes[s.index] !== undefined);
+  const remaining = segments.filter((s) => segmentModes[s.index] === undefined).length;
+
+  return (
+    <div className="route-analysis-panel">
+      <div className="route-analysis-panel__header">
+        <strong>경로 분석</strong>
+        <button type="button" className="route-analysis-panel__close" onClick={onClose}>&times;</button>
+      </div>
+      {segments.length === 0 ? (
+        <p className="route-analysis-panel__empty">지점을 2개 이상 설정하세요</p>
+      ) : (
+        <>
+          <ul className="route-analysis-panel__list">
+            {segments.map((seg) => (
+              <li key={seg.index} className="route-analysis-panel__segment">
+                <div className="route-analysis-panel__segment-label">
+                  <span className="route-analysis-panel__segment-index">{seg.index + 1}</span>
+                  <span className="route-analysis-panel__segment-names">
+                    <span>{seg.from.name}</span>
+                    <span className="route-analysis-panel__arrow">→</span>
+                    <span>{seg.to.name}</span>
+                  </span>
+                </div>
+                <div className="route-analysis-panel__modes">
+                  {TRANSPORT_MODES.map((mode) => (
+                    <button
+                      key={mode.key}
+                      type="button"
+                      className={`route-analysis-panel__mode-btn${segmentModes[seg.index] === mode.key ? ' selected' : ''}`}
+                      onClick={() => setSegmentModes((prev) => ({ ...prev, [seg.index]: mode.key }))}
+                      title={mode.label}
+                    >
+                      <span>{mode.icon}</span>
+                      <span>{mode.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="route-analysis-panel__footer">
+            <button
+              type="button"
+              className={`route-analysis-panel__analyze-btn${allSelected ? ' active' : ''}`}
+              disabled={!allSelected}
+            >
+              {allSelected ? '분석 시작' : `${remaining}개 구간 선택 필요`}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function RouteAdjustPanel({ points, onReorder, onClose }: RouteAdjustPanelProps) {
+  const dragIndexRef = useRef<number | null>(null);
+
+  const handleDragStart = (index: number) => {
+    dragIndexRef.current = index;
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    const from = dragIndexRef.current;
+    if (from === null || from === index) return;
+    const next = [...points];
+    const [item] = next.splice(from, 1);
+    next.splice(index, 0, item);
+    dragIndexRef.current = index;
+    onReorder(next);
+  };
+
+  const handleDragEnd = () => {
+    dragIndexRef.current = null;
+  };
+
+  return (
+    <div className="route-adjust-panel">
+      <div className="route-adjust-panel__header">
+        <strong>경로 조정</strong>
+        <button type="button" className="route-adjust-panel__close" onClick={onClose}>&times;</button>
+      </div>
+      {points.length === 0 ? (
+        <p className="route-adjust-panel__empty">지점을 먼저 설정하세요</p>
+      ) : (
+        <ol className="route-adjust-panel__list">
+          {points.map((p, i) => (
+            <li
+              key={`${p.lat},${p.lng}`}
+              className="route-adjust-panel__item"
+              draggable
+              onDragStart={() => handleDragStart(i)}
+              onDragOver={(e) => handleDragOver(e, i)}
+              onDragEnd={handleDragEnd}
+            >
+              <span className="route-adjust-panel__order">{i + 1}</span>
+              <span className="route-adjust-panel__icon">{p.icon}</span>
+              <span className="route-adjust-panel__name">{p.name}</span>
+              <span className="route-adjust-panel__handle">⠿</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 

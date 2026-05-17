@@ -27,6 +27,9 @@ db.sqlite3
 media/
 staticfiles/
 
+# Redis
+dump.rdb
+
 # Node / Vite (`frontend/`)
 node_modules/
 frontend/dist/

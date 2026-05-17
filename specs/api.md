@@ -6,11 +6,12 @@
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/auth/register` | Sign up | No |
-| POST | `/api/auth/login` | Login (issues JWT) | No |
-| POST | `/api/auth/refresh` | Refresh access token | No |
+| POST | `/api/auth/register/` | Sign up | No |
+| POST | `/api/auth/login/` | Login (issues JWT) | No |
+| POST | `/api/auth/refresh/` | Refresh access token | No |
 | GET | `/api/spots/?theme=&lat=&lng=&radius=` | Spot list (radius query) | No |
 | GET | `/api/spots/{id}/` | Spot detail | No |
+| GET | `/api/spots/nearby-recommend/?lat=&lng=&theme=` | Nearby spot recommendation (8 directions) | No |
 | POST | `/api/routes/` | Save route | Yes |
 | GET | `/api/routes/{id}/` | Route detail | Yes |
 | POST | `/api/routes/auto/` | Auto route recommendation (F03) | Yes |
@@ -21,6 +22,8 @@
 | POST | `/api/visits/{spot_id}/certify/` | Request GPS verification | Yes |
 | GET | `/api/reviews/?spot_id=` | Spot review list | No |
 | POST | `/api/reviews/` | Submit review (CERTIFIED only) | Yes |
+| GET | `/api/places/nearby/?lat=&lng=&query=` | Google Places nearby proxy | No |
+| GET | `/api/places/reviews/?place_id=` | Google Places reviews proxy | No |
 | GET | `/api/health/` | Health check | No |
 
 ---

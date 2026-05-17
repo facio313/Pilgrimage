@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from apps.spots.models import TouristSpot
 
+from .models import VisitLog
 from .serializers import GpsLogSerializer, VisitLogSerializer
 from .services import certify_visit
 
@@ -23,3 +24,15 @@ class CertifyVisitView(APIView):
         visit_log = certify_visit(request.user, spot)
         serializer = VisitLogSerializer(visit_log)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class VisitStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, spot_id):
+        certified = VisitLog.objects.filter(
+            user=request.user,
+            spot_id=spot_id,
+            status="CERTIFIED",
+        ).exists()
+        return Response({"certified": certified})

@@ -6,6 +6,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.spots.models import GooglePlaceCache
+
 logger = logging.getLogger(__name__)
 
 GOOGLE_PLACES_KEY = config("GOOGLE_PLACES_KEY", default="")
@@ -13,6 +15,10 @@ NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby"
 TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 PLACE_DETAIL_URL_TPL = "https://places.googleapis.com/v1/places/{place_id}"
 PHOTO_URL_TPL = "https://places.googleapis.com/v1/{name}/media?maxWidthPx=400&key={key}"
+
+
+def _nearby_key(lat, lng):
+    return f"{float(lat):.4f}:{float(lng):.4f}"
 
 
 def _serialize_places(data):
@@ -46,29 +52,57 @@ def _request_places(url, body, headers):
     return _serialize_places(data)
 
 
+def _cache_to_result(cached):
+    return {
+        "placeId": cached.place_id,
+        "name": cached.name,
+        "address": cached.address,
+        "rating": cached.rating,
+        "userRatingCount": cached.user_rating_count,
+        "photoUrl": cached.photo_url,
+        "googleMapsUri": cached.google_maps_uri,
+    }
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def place_nearby(request):
     lat = request.query_params.get("lat")
     lng = request.query_params.get("lng")
     query = request.query_params.get("query", "").strip()
-    if not lat or not lng or not GOOGLE_PLACES_KEY:
+    if not lat or not lng:
+        return Response({"results": []})
+
+    key = _nearby_key(lat, lng)
+
+    # DB 캐시 확인 — None이 아니면 이전에 API를 호출한 기록이 있음
+    cached = GooglePlaceCache.objects.filter(lookup_key=key).first()
+    if cached is not None:
+        if not cached.place_id:
+            return Response({"results": []})
+        return Response({"results": [_cache_to_result(cached)]})
+
+    if not GOOGLE_PLACES_KEY:
+        try:
+            GooglePlaceCache.objects.get_or_create(lookup_key=key)
+        except Exception:
+            pass
         return Response({"results": []})
 
     location_circle = {
         "circle": {
             "center": {"latitude": float(lat), "longitude": float(lng)},
-            "radius": 500.0 if query else 200.0,
+            "radius": 500.0,
         }
+    }
+    nearby_body = {
+        "locationRestriction": location_circle,
+        "maxResultCount": 1,
+        "languageCode": "ko",
     }
     text_body = {
         "textQuery": query,
         "locationBias": location_circle,
-        "maxResultCount": 1,
-        "languageCode": "ko",
-    }
-    nearby_body = {
-        "locationRestriction": location_circle,
         "maxResultCount": 1,
         "languageCode": "ko",
     }
@@ -77,15 +111,38 @@ def place_nearby(request):
         "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.photos,places.googleMapsUri",
     }
 
+    results = []
     try:
-        results = []
-        if query:
-            results = _request_places(TEXT_SEARCH_URL, text_body, headers)
-        if not results:
-            results = _request_places(NEARBY_URL, nearby_body, headers)
+        results = _request_places(NEARBY_URL, nearby_body, headers)
     except Exception as e:
-        logger.warning("Google Places API exception: %s", e)
-        return Response({"results": []})
+        logger.warning("Google Places nearby exception: %s", e)
+
+    if not results and query:
+        try:
+            results = _request_places(TEXT_SEARCH_URL, text_body, headers)
+        except Exception as e:
+            logger.warning("Google Places text search exception: %s", e)
+
+    # DB 저장 — 결과 없어도 저장해서 재호출 방지
+    try:
+        if results:
+            place = results[0]
+            GooglePlaceCache.objects.get_or_create(
+                lookup_key=key,
+                defaults={
+                    "place_id": place["placeId"],
+                    "name": place["name"],
+                    "address": place["address"],
+                    "rating": place["rating"],
+                    "user_rating_count": place["userRatingCount"],
+                    "photo_url": place["photoUrl"],
+                    "google_maps_uri": place["googleMapsUri"],
+                },
+            )
+        else:
+            GooglePlaceCache.objects.get_or_create(lookup_key=key)
+    except Exception as e:
+        logger.warning("GooglePlaceCache save error: %s", e)
 
     return Response({"results": results})
 
@@ -94,7 +151,15 @@ def place_nearby(request):
 @permission_classes([AllowAny])
 def place_reviews(request):
     place_id = request.query_params.get("place_id")
-    if not place_id or not GOOGLE_PLACES_KEY:
+    if not place_id:
+        return Response({"reviews": []})
+
+    # DB 캐시 확인
+    cached = GooglePlaceCache.objects.filter(place_id=place_id, reviews_fetched=True).first()
+    if cached is not None:
+        return Response({"reviews": cached.reviews})
+
+    if not GOOGLE_PLACES_KEY:
         return Response({"reviews": []})
 
     url = PLACE_DETAIL_URL_TPL.format(place_id=place_id)
@@ -121,5 +186,20 @@ def place_reviews(request):
             "text": r.get("text", {}).get("text", ""),
             "relativeTime": r.get("relativePublishTimeDescription", ""),
         })
+
+    # DB 저장
+    try:
+        updated = GooglePlaceCache.objects.filter(place_id=place_id).update(
+            reviews=reviews, reviews_fetched=True
+        )
+        if not updated:
+            GooglePlaceCache.objects.create(
+                lookup_key=f"review:{place_id}",
+                place_id=place_id,
+                reviews=reviews,
+                reviews_fetched=True,
+            )
+    except Exception as e:
+        logger.warning("GooglePlaceCache reviews save error: %s", e)
 
     return Response({"reviews": reviews})
