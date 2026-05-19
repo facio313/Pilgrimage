@@ -1,12 +1,14 @@
 from django.contrib import admin
 from django.urls import include, path
 
+from common.directions import directions
 from common.health import health_check
 from common.places import place_nearby, place_reviews
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/health/", health_check),
+    path("api/directions/", directions),
     path("api/places/nearby/", place_nearby),
     path("api/places/reviews/", place_reviews),
     path("api/auth/", include("apps.users.urls")),

@@ -1,9 +1,10 @@
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useKakaoMap } from '../hooks/useKakaoMap';
 import { listSpots, getNearbyRecommend, upsertSpot, type Spot, type NearbySpot } from '../api/spots';
+import { getDirections, formatDistance, formatDuration, type DirectionsResult } from '../api/directions';
 import { login, register } from '../api/auth';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/auth';
@@ -793,21 +794,88 @@ export function MapPage() {
     });
   }, [map, selectedSpotsOrdered]);
 
+  const [directionsInfo, setDirectionsInfo] = useState<DirectionsResult | null>(null);
+  const [directionsLoading, setDirectionsLoading] = useState(false);
+  const directionsAbortRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     if (!map) return;
+
+    // Clean up previous polyline
     if (setPointsPolylineRef.current) {
       setPointsPolylineRef.current.setMap(null);
       setPointsPolylineRef.current = null;
     }
-    if (orderedPoints.length < 2) return;
+
+    // Abort any in-flight directions request
+    if (directionsAbortRef.current) {
+      directionsAbortRef.current.abort();
+      directionsAbortRef.current = null;
+    }
+
+    if (orderedPoints.length < 2) {
+      setDirectionsInfo(null);
+      return;
+    }
+
     const kakao = window.kakao;
+
+    // Draw fallback straight line immediately
     setPointsPolylineRef.current = new kakao.maps.Polyline({
       map,
       path: orderedPoints.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
       strokeWeight: 3,
       strokeColor: '#ff6b35',
-      strokeOpacity: 0.85,
+      strokeOpacity: 0.4,
+      strokeStyle: 'dashed',
     });
+
+    // Fetch road directions
+    const abortCtrl = new AbortController();
+    directionsAbortRef.current = abortCtrl;
+    setDirectionsLoading(true);
+
+    const origin = { lat: orderedPoints[0].lat, lng: orderedPoints[0].lng };
+    const destination = {
+      lat: orderedPoints[orderedPoints.length - 1].lat,
+      lng: orderedPoints[orderedPoints.length - 1].lng,
+    };
+    const waypoints = orderedPoints.length > 2
+      ? orderedPoints.slice(1, -1).map((p) => ({ lat: p.lat, lng: p.lng }))
+      : undefined;
+
+    getDirections(origin, destination, waypoints, 'DISTANCE')
+      .then((result) => {
+        if (abortCtrl.signal.aborted) return;
+
+        // Remove fallback dashed line
+        if (setPointsPolylineRef.current) {
+          setPointsPolylineRef.current.setMap(null);
+        }
+
+        // Draw road-following polyline
+        setPointsPolylineRef.current = new kakao.maps.Polyline({
+          map,
+          path: result.polyline.map((c) => new kakao.maps.LatLng(c.lat, c.lng)),
+          strokeWeight: 5,
+          strokeColor: '#ff6b35',
+          strokeOpacity: 0.9,
+        });
+
+        setDirectionsInfo(result);
+      })
+      .catch((err) => {
+        if (abortCtrl.signal.aborted) return;
+        console.warn('[Pilgrimage] Directions API failed, keeping straight line:', err);
+        setDirectionsInfo(null);
+      })
+      .finally(() => {
+        if (!abortCtrl.signal.aborted) setDirectionsLoading(false);
+      });
+
+    return () => {
+      abortCtrl.abort();
+    };
   }, [map, orderedPoints]);
 
   if (error) {
@@ -873,6 +941,26 @@ export function MapPage() {
 
       {/* 팝오버는 Kakao CustomOverlay로 지도 위에 직접 표시됨 */}
 
+      {/* 길찾기 요약 배지 */}
+      {directionsInfo && orderedPoints.length >= 2 && (
+        <div className="directions-badge">
+          <span className="directions-badge__distance">
+            🚗 {formatDistance(directionsInfo.total_distance_m)}
+          </span>
+          <span className="directions-badge__duration">
+            ⏱ {formatDuration(directionsInfo.total_duration_sec)}
+          </span>
+          {directionsInfo.toll_fee > 0 && (
+            <span className="directions-badge__toll">
+              💰 {directionsInfo.toll_fee.toLocaleString()}원
+            </span>
+          )}
+        </div>
+      )}
+      {directionsLoading && orderedPoints.length >= 2 && (
+        <div className="directions-badge loading">경로 계산 중...</div>
+      )}
+
       {isRouteAdjustOpen && (
         <RouteAdjustPanel
           points={orderedPoints}
@@ -883,6 +971,8 @@ export function MapPage() {
       {isRouteAnalysisOpen && (
         <RouteAnalysisPanel
           points={orderedPoints}
+          directionsInfo={directionsInfo}
+          directionsLoading={directionsLoading}
           onClose={() => setIsRouteAnalysisOpen(false)}
         />
       )}
@@ -1185,10 +1275,12 @@ type TransportKey = typeof TRANSPORT_MODES[number]['key'];
 
 interface RouteAnalysisPanelProps {
   points: OrderedPoint[];
+  directionsInfo: DirectionsResult | null;
+  directionsLoading: boolean;
   onClose: () => void;
 }
 
-function RouteAnalysisPanel({ points, onClose }: RouteAnalysisPanelProps) {
+function RouteAnalysisPanel({ points, directionsInfo, directionsLoading, onClose }: RouteAnalysisPanelProps) {
   const [segmentModes, setSegmentModes] = useState<Record<number, TransportKey>>({});
 
   const segments = points.length >= 2
@@ -1204,6 +1296,46 @@ function RouteAnalysisPanel({ points, onClose }: RouteAnalysisPanelProps) {
         <strong>경로 분석</strong>
         <button type="button" className="route-analysis-panel__close" onClick={onClose}>&times;</button>
       </div>
+
+      {/* Directions summary */}
+      {directionsLoading && (
+        <div className="route-analysis-panel__summary loading">경로 계산 중...</div>
+      )}
+      {directionsInfo && !directionsLoading && (
+        <div className="route-analysis-panel__summary">
+          <div className="route-analysis-panel__summary-row">
+            <span className="route-analysis-panel__summary-label">총 거리</span>
+            <strong>{formatDistance(directionsInfo.total_distance_m)}</strong>
+          </div>
+          <div className="route-analysis-panel__summary-row">
+            <span className="route-analysis-panel__summary-label">예상 시간</span>
+            <strong>{formatDuration(directionsInfo.total_duration_sec)}</strong>
+          </div>
+          {directionsInfo.toll_fee > 0 && (
+            <div className="route-analysis-panel__summary-row">
+              <span className="route-analysis-panel__summary-label">통행료</span>
+              <strong>{directionsInfo.toll_fee.toLocaleString()}원</strong>
+            </div>
+          )}
+          {directionsInfo.sections.length > 1 && (
+            <div className="route-analysis-panel__sections">
+              {directionsInfo.sections.map((sec, i) => (
+                <div key={i} className="route-analysis-panel__section-row">
+                  <span>구간 {i + 1}</span>
+                  <span>{formatDistance(sec.distance_m)}</span>
+                  <span>{formatDuration(sec.duration_sec)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {!directionsInfo && !directionsLoading && segments.length >= 1 && (
+        <div className="route-analysis-panel__summary muted">
+          도로 경로를 가져올 수 없어 직선 거리를 표시합니다
+        </div>
+      )}
+
       {segments.length === 0 ? (
         <p className="route-analysis-panel__empty">지점을 2개 이상 설정하세요</p>
       ) : (
