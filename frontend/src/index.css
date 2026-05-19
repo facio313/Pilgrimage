@@ -1779,3 +1779,102 @@ body {
   color: #bbb;
   cursor: grab;
 }
+
+/* ── Directions badge (map overlay) ── */
+
+.directions-badge {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-radius: 24px;
+  padding: 8px 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  z-index: 30;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.directions-badge.loading {
+  color: #888;
+  font-weight: 400;
+}
+
+.directions-badge__distance {
+  color: #ff6b35;
+}
+
+.directions-badge__duration {
+  color: #1a73e8;
+}
+
+.directions-badge__toll {
+  color: #e8a01a;
+}
+
+/* ── Route analysis panel — summary section ── */
+
+.route-analysis-panel__summary {
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.route-analysis-panel__summary.loading {
+  color: #888;
+  font-style: italic;
+  text-align: center;
+  padding: 16px;
+}
+
+.route-analysis-panel__summary.muted {
+  color: #999;
+  font-size: 12px;
+  text-align: center;
+  padding: 10px 16px;
+}
+
+.route-analysis-panel__summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+
+.route-analysis-panel__summary-label {
+  color: #666;
+}
+
+.route-analysis-panel__summary-row strong {
+  color: #222;
+}
+
+.route-analysis-panel__sections {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #ddd;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.route-analysis-panel__section-row {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #666;
+}
+
+.route-analysis-panel__section-row span:first-child {
+  flex: 1;
+  font-weight: 500;
+  color: #444;
+}
