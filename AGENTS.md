@@ -42,6 +42,130 @@ Editing only a tool-specific file means the other agents will miss the update.
 
 ---
 
+## Vowline
+
+<!-- vowline:start -->
+Always use the skill `vowline` consistently, including for all sub-agents.
+<!-- vowline:end -->
+
+Vowline은 에이전트가 작업을 증거 기반으로 수행하고, 결과를 공개 인터페이스로 검증하도록 강제하는 cross-cutting 운영 스킬이다.
+모든 에이전트에 전역 설치되어 있으며, 실질적인 작업(구현, 수정, 검증)에는 항상 활성화한다.
+
+### 설치 상태
+
+| 에이전트 | 전역 스킬 경로 | 활성화 방식 |
+|----------|---------------|------------|
+| Claude Code | `~/.claude/skills/vowline/` | `~/.claude/CLAUDE.md` 마커 블록 |
+| Codex | `~/.agents/skills/vowline/` | `~/.codex/AGENTS.md` 마커 블록 |
+| Cursor | `~/.cursor/skills/vowline/` | `.cursor/rules/vowline.mdc` (alwaysApply) |
+
+### 호출 방법
+
+| 에이전트 | 호출 접두어 | 예시 |
+|----------|------------|------|
+| Claude Code | `/vowline` | `/vowline fix the GPS verification service and verify it` |
+| Codex | `$vowline` | `$vowline build the route algorithm and run tests` |
+| Cursor | 자동 적용 (alwaysApply) | 별도 호출 불필요 |
+
+### 업데이트
+
+```bash
+git clone https://github.com/chojondocho/vowline.git /tmp/vowline
+python3 /tmp/vowline/install.py global --harnesses core
+```
+
+---
+
+## Memento MCP
+
+에이전트 간 장기 기억을 공유하는 MCP 서버. 세션이 종료되어도 기억이 유지되며, Claude Code / Cursor / Codex 모두 동일한 서버에 연결된다.
+
+- **서버 위치**: `~/memento-mcp/` (Node.js)
+- **엔드포인트**: `http://localhost:57332/mcp`
+- **DB**: `memento` (PostgreSQL + pgvector)
+- **기동**: `nohup node ~/memento-mcp/server.js > /tmp/memento.log 2>&1 &`
+
+### 에이전트별 연결 설정
+
+| 에이전트 | 설정 파일 |
+|----------|----------|
+| Claude Code | `~/.claude.json` (user scope, `claude mcp add`로 등록) |
+| Cursor | `~/.cursor/mcp.json` |
+| Codex | `~/.codex/mcp.json` |
+
+### 기억 유형
+
+| 유형 | 용도 |
+|------|------|
+| `fact` | 설정값, 버전, 환경 정보 |
+| `decision` | 아키텍처 선택과 근거 |
+| `error` | 에러 원인과 해결 방법 |
+| `preference` | 코딩 스타일, 작업 방식 |
+| `procedure` | 배포, 테스트 등 반복 절차 |
+| `relation` | 컴포넌트 간 의존성 |
+| `episode` | 전후 맥락 포함 서사 기억 |
+
+### ACCESS_KEY
+
+서버 접속에 인증 키가 필요하다. 키는 `~/memento-mcp/.env`의 `MEMENTO_ACCESS_KEY`에 저장되어 있다.
+각 에이전트 설정 파일에 `Authorization: Bearer <key>` 헤더로 등록되어 있으므로 별도 설정 불필요.
+
+### 기억 도구 사용 규칙 (모든 에이전트 절대 준수)
+
+세션 골격: **`context 시작 → recall·remember 운용 → reflect 마무리`**
+
+#### 세션 시작
+- 세션 시작 시 `context` 도구를 호출하여 기억을 로드한다 (Claude Code는 SessionStart 훅 자동 실행).
+- `[기억 시스템]` 또는 `[ANCHOR MEMORY]` 섹션이 있으면 숙지 후 추가 호출 불필요.
+- context 후에도 첫 발화의 구체적 키워드에 대해 추가 `recall` 선행 필수.
+
+#### Recall-First (강제 규약)
+답변·코드 생성 전 의무 선행 호출. 아래 신호 발생 시 즉시 호출:
+
+| 신호 | 호출 방식 |
+|------|----------|
+| "이전에", "저번에", 과거 참조 | `recall(text=내용, includeContext=true)` |
+| 프로젝트명·서비스명 등장 | `recall(topic=프로젝트명, contextText=작업 요약)` |
+| 에러·실패 보고 | `recall(type="error", keywords=[에러 키워드])` |
+| 설정·포트·환경변수 언급 | `recall(type="fact", keywords=[설정명])` |
+| 빌드·배포·테스트 절차 질문 | `recall(type="procedure", keywords=[프로젝트명])` |
+| 아키텍처·기술 결정 회상 | `recall(type="decision", topic=프로젝트명)` |
+
+**침묵 호출 원칙**: recall은 사용자에게 알리지 않고 먼저 수행. 결과 있으면 근거로 답변, 없을 때만 추가 정보 요청.
+
+#### Remember 필수 호출 상황
+
+| 상황 | type | importance |
+|------|------|-----------|
+| 에러 원인 파악 | error | 0.8 |
+| 에러 해결책 확정 | procedure | 0.8 |
+| 사용자 선호·스타일 명시 | preference | 0.9 |
+| 아키텍처·기술 스택 선택 | decision | 0.7 |
+| 서비스 경로·포트·설정값 | fact | 0.6 |
+| 배포·빌드 절차 완성 | procedure | 0.7 |
+| "기억해", "저장해" 언급 | (지정 타입) | 1.0 |
+
+#### tool_feedback 의무
+recall 후 `_meta.searchEventId` 보관 → 답변 직후 `tool_feedback` 호출 (활용 파편 relevant=true, 무관 파편 relevant=false).
+
+#### 세션 종료
+중요한 작업 결과는 `reflect`로 저장. 해결된 에러 파편은 `forget`. 미저장 종료 금지.
+
+#### 금지 행위
+- recall 없이 추측 답변 / 사용자에게 "이전 설정 알려주세요" 되묻기
+- recall 0건에서 즉시 포기 (keywords 재구성·type 제거 등 재시도 의무)
+- `_meta.suggestion.recommendedTool` 무시
+
+#### Cursor / Codex용 수동 context 호출 (세션 시작 시)
+```bash
+curl -s -X POST http://localhost:57332/mcp \
+  -H "Authorization: Bearer $(grep MEMENTO_ACCESS_KEY ~/memento-mcp/.env | cut -d= -f2)" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"context","arguments":{}}}'
+```
+
+---
+
 ## Behavioral guidelines
 
 - **Always respond in Korean**, regardless of the language used in files or code.
