@@ -1,0 +1,24 @@
+name: Deploy to RPi5
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy on RPi5
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: bonifacio.work
+          port: 22022
+          username: ${{ secrets.RPI5_USER }}
+          key: ${{ secrets.RPI5_SSH_KEY }}
+          script: |
+            cd /home/cks/pilgrimage
+            git pull origin main
+            docker compose build
+            docker compose up -d
+            docker image prune -f
