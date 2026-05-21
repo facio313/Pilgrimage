@@ -12,10 +12,10 @@ jobs:
       - name: Deploy on RPi5
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: bonifacio.work
+          host: ${{ secrets.DEPLOY_HOST }}
           port: 22022
-          username: ${{ secrets.RPI5_USER }}
-          key: ${{ secrets.RPI5_SSH_KEY }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
           script: |
             cd /home/cks/pilgrimage
             git pull origin main
