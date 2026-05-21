@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -86,7 +86,7 @@ export function MapPage() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const { data: spots = [], isLoading } = useQuery({
+  const { data: spots = [] } = useQuery({
     queryKey: ['spots', theme],
     queryFn: () =>
       listSpots({
@@ -403,7 +403,6 @@ export function MapPage() {
     const placeLookupKey = `google:v2:${nearbyCacheKey}|${searchQuery}`;
     cachePopover(lat, lng, name, address, extra);
 
-    const isDbSpot = !!(spot && spot.id);
     const linksSlot = el.querySelector('.spot-popover__links');
     const renderMapLinks = (place?: any | null) => {
       if (!linksSlot) return;
@@ -616,19 +615,6 @@ export function MapPage() {
           <span class="spot-popover__review-time">${rv.relativeTime}</span>
         </div>
         <p>${rv.text?.length > 80 ? rv.text.slice(0, 80) + '…' : rv.text}</p>
-      </div>`
-    ).join('');
-  };
-
-  const renderOurReviews = (reviews: any[]) => {
-    if (!reviews.length) return '<p class="spot-popover__review-empty">리뷰가 없습니다</p>';
-    return reviews.map((rv: any) =>
-      `<div class="spot-popover__review">
-        <div class="spot-popover__review-header">
-          <strong>${rv.user_nickname || '익명'}</strong>
-          <span>${'⭐'.repeat(rv.rating || 0)}</span>
-        </div>
-        <p>${(rv.body || '').length > 80 ? rv.body.slice(0, 80) + '…' : rv.body || ''}</p>
       </div>`
     ).join('');
   };
