@@ -14,7 +14,7 @@ const queryClient = new QueryClient();
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename="/pilgrimage/">
         <Routes>
           <Route path="/" element={<MapPage />} />
           <Route path="/themes" element={<ThemeSelectPage />} />

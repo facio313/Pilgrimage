@@ -225,9 +225,9 @@ curl -s -X POST http://localhost:57332/mcp \
 | Item | Status |
 |------|--------|
 | Celery + django-celery-beat (KTO API scheduled sync) | ⬜ Pending |
-| `docker-compose.prod.yml` | ⬜ Pending |
-| Dockerfile (backend, frontend) ARM64 optimization | ⬜ Pending |
-| GitHub Actions deploy.yml (ghcr.io → RPi5 SSH) secrets | ⬜ Pending |
+| `docker-compose.yml` | ✅ Done |
+| Dockerfile (backend, frontend) ARM64 optimization | ✅ Done |
+| GitHub Actions deploy.yml (ghcr.io → RPi5 SSH) secrets | ✅ Done (secrets 등록 필요) |
 
 ---
 
@@ -310,7 +310,7 @@ Pilgrimage/
 │       └── lib/             # kakaoLoader.ts (singleton SDK loader)
 ├── specs/                   # Feature specs, DB schema, API reference
 ├── nginx/nginx.conf         # /api/ → backend:8000, / → SPA
-├── docker-compose.prod.yml  # Production (ghcr.io images)
+├── docker-compose.yml  # Production (ghcr.io images)
 └── .github/workflows/
     ├── ci.yml               # PR/push → ruff + pytest + tsc build
     └── deploy.yml           # main push → ARM64 build → RPi5 SSH deploy
