@@ -322,8 +322,9 @@ Pilgrimage/
 - GitHub Actions builds the backend and frontend natively on an ARM64 runner.
 - Both images are pushed to GHCR with immutable commit-SHA tags and a convenience `latest` tag.
 - The server receives only `deploy pilgrimage <commit-sha>` through the restricted CI SSH key.
-- `pilgrimageDB`, `pilgrimageRedis`, and PostgreSQL data are retained during application deploys.
-- PostgreSQL data is bind-mounted from `/home/cks/pilgrimage/dbmnt-rootless`.
+- Production PostgreSQL is the shared, host-unpublished `cksDB` container. Pilgrimage uses its own `pilgrimage` database and restricted `pilgrimage` login role.
+- The backend joins both the application `pilgrimage` network (for Redis) and the external `cksDB` network. Application deploys never create, stop, or remove the database container.
+- The stopped legacy `pilgrimageDB` container and `/home/cks/pilgrimage/dbmnt-rootless` are rollback-only and must not be restarted or deleted until the migration retention period ends.
 - The frontend proxy configuration is baked into its image; production does not bind-mount a repository Nginx file.
 - Deployment must never run a global image/system prune or remove application volumes.
 

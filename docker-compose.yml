@@ -1,20 +1,4 @@
 services:
-  pilgrimageDB:
-    build: ./db
-    image: pilgrimage-db
-    container_name: pilgrimageDB
-    environment:
-      POSTGRES_DB: pilgrimage
-      POSTGRES_USER: pilgrimage
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - pilgrimageDBData:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5433:5432"
-    networks:
-      - pilgrimage
-    restart: always
-
   pilgrimageRedis:
     image: redis:7-alpine
     container_name: pilgrimageRedis
@@ -28,12 +12,13 @@ services:
     image: ${PILGRIMAGE_BACKEND_IMAGE:-ghcr.io/facio313/pilgrimage-backend:latest}
     container_name: pilgrimageBackend
     depends_on:
-      - pilgrimageDB
       - pilgrimageRedis
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
-      POSTGRES_HOST: pilgrimageDB
+      POSTGRES_DB: pilgrimage
+      POSTGRES_USER: pilgrimage
+      POSTGRES_HOST: cksDB
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://pilgrimageRedis:6379/0
     command: >
@@ -44,6 +29,7 @@ services:
       - "127.0.0.1:9174:8000"
     networks:
       - pilgrimage
+      - cksDB
     restart: always
 
   pilgrimageFrontend:
@@ -57,15 +43,10 @@ services:
       - pilgrimage
     restart: always
 
-volumes:
-  pilgrimageDBData:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /home/cks/pilgrimage/dbmnt-rootless
-
 networks:
   pilgrimage:
     name: pilgrimage
     driver: bridge
+  cksDB:
+    external: true
+    name: cksDB
