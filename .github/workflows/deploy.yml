@@ -1,24 +1,93 @@
-name: Deploy to RPi5
+name: Build and deploy to RPi5
 
 on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: pilgrimage-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/facio313/pilgrimage-backend
+  FRONTEND_IMAGE: ghcr.io/facio313/pilgrimage-frontend
+
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  build-and-deploy:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
 
     steps:
-      - name: Deploy on RPi5
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          port: 22022
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          script: |
-            cd /home/cks/pilgrimage
-            git pull origin main
-            docker compose build
-            docker compose up -d
-            docker image prune -f
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ./backend
+          platforms: linux/arm64
+          push: true
+          pull: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+            ${{ env.BACKEND_IMAGE }}:latest
+          cache-from: type=gha,scope=pilgrimage-backend
+          cache-to: type=gha,mode=max,scope=pilgrimage-backend
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ./frontend
+          platforms: linux/arm64
+          push: true
+          pull: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          cache-from: type=gha,scope=pilgrimage-frontend
+          cache-to: type=gha,mode=max,scope=pilgrimage-frontend
+
+      - name: Deploy immutable images on RPi5
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          GHCR_TOKEN: ${{ github.token }}
+          DEPLOY_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" | tr -d '\r' > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+          printf '%s\n' \
+            '[ssh.bonifacio.work]:22022 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII91ovdQZMg9NpUyjjFSS0Ra0SEuYuAw4Uv3GTv6J92F' \
+            > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/deploy_key"' EXIT
+
+          { printf '%s\n' "$GHCR_TOKEN"; printf '%s\n' "$DEPLOY_ACTOR"; } | ssh -T \
+            -i "$HOME/.ssh/deploy_key" \
+            -p 22022 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            cks@ssh.bonifacio.work \
+            "deploy pilgrimage $GITHUB_SHA"

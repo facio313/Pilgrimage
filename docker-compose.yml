@@ -25,8 +25,7 @@ services:
     restart: always
 
   pilgrimageBackend:
-    build: ./backend
-    image: pilgrimage-backend
+    image: ${PILGRIMAGE_BACKEND_IMAGE:-ghcr.io/facio313/pilgrimage-backend:latest}
     container_name: pilgrimageBackend
     depends_on:
       - pilgrimageDB
@@ -48,19 +47,12 @@ services:
     restart: always
 
   pilgrimageFrontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_KAKAO_JS_KEY: ${VITE_KAKAO_JS_KEY}
-        VITE_API_BASE_URL: /api
-    image: pilgrimage-frontend
+    image: ${PILGRIMAGE_FRONTEND_IMAGE:-ghcr.io/facio313/pilgrimage-frontend:latest}
     container_name: pilgrimageFrontend
     depends_on:
       - pilgrimageBackend
     ports:
       - "127.0.0.1:5174:80"
-    volumes:
-      - /home/cks/pilgrimage/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - pilgrimage
     restart: always
@@ -71,7 +63,7 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /home/cks/pilgrimage/dbmnt
+      device: /home/cks/pilgrimage/dbmnt-rootless
 
 networks:
   pilgrimage:

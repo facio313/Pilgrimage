@@ -227,7 +227,7 @@ curl -s -X POST http://localhost:57332/mcp \
 | Celery + django-celery-beat (KTO API scheduled sync) | ⬜ Pending |
 | `docker-compose.yml` | ✅ Done |
 | Dockerfile (backend, frontend) ARM64 optimization | ✅ Done |
-| GitHub Actions deploy.yml (ghcr.io → RPi5 SSH) secrets | ✅ Done (secrets 등록 필요) |
+| GitHub Actions deploy.yml (native ARM64 build → GHCR → RPi5 SSH) | ✅ Done (`DEPLOY_KEY` secret 필요) |
 
 ---
 
@@ -309,12 +309,23 @@ Pilgrimage/
 │       ├── store/           # auth.ts (JWT), route.ts (route draft)
 │       └── lib/             # kakaoLoader.ts (singleton SDK loader)
 ├── specs/                   # Feature specs, DB schema, API reference
-├── nginx/nginx.conf         # /api/ → backend:8000, / → SPA
+├── nginx/nginx.conf         # Legacy/local reference for the frontend proxy config
+├── frontend/nginx.conf      # Baked into the frontend image: /api/ → backend:8000, / → SPA
 ├── docker-compose.yml  # Production (ghcr.io images)
 └── .github/workflows/
     ├── ci.yml               # PR/push → ruff + pytest + tsc build
     └── deploy.yml           # main push → ARM64 build → RPi5 SSH deploy
 ```
+
+### Production deployment
+
+- GitHub Actions builds the backend and frontend natively on an ARM64 runner.
+- Both images are pushed to GHCR with immutable commit-SHA tags and a convenience `latest` tag.
+- The server receives only `deploy pilgrimage <commit-sha>` through the restricted CI SSH key.
+- `pilgrimageDB`, `pilgrimageRedis`, and PostgreSQL data are retained during application deploys.
+- PostgreSQL data is bind-mounted from `/home/cks/pilgrimage/dbmnt-rootless`.
+- The frontend proxy configuration is baked into its image; production does not bind-mount a repository Nginx file.
+- Deployment must never run a global image/system prune or remove application volumes.
 
 ---
 
@@ -371,7 +382,8 @@ psql pilgrimage -c "CREATE EXTENSION postgis;"
 **3. Environment variables**
 ```bash
 # backend/.env — Django vars (SECRET_KEY, DB, REDIS, KTO_API_KEY, KAKAO_JS_KEY)
-# frontend/.env — Vite vars (VITE_KAKAO_JS_KEY, VITE_API_BASE_URL)
+# frontend/.env — local Vite overrides
+# frontend/.env.production — committed browser-visible Kakao key and production API base
 ```
 
 **4. Backend**
@@ -411,7 +423,7 @@ cd backend && pytest -q
 cd frontend && node_modules/.bin/tsc --noEmit
 
 # Frontend build check
-cd frontend && VITE_KAKAO_JS_KEY=dummy node_modules/.bin/vite build
+cd frontend && node_modules/.bin/vite build
 ```
 
 ---
@@ -425,12 +437,13 @@ cd frontend && VITE_KAKAO_JS_KEY=dummy node_modules/.bin/vite build
 | `REDIS_URL` | backend | `redis://localhost:6379/0` |
 | `KTO_API_KEY` | backend | Korea Tourism Organization OpenAPI key |
 | `KAKAO_JS_KEY` | backend | Kakao JS API key (server-side reference) |
-| `VITE_KAKAO_JS_KEY` | frontend | Kakao JS API key (build-time injection) |
+| `VITE_KAKAO_JS_KEY` | frontend/.env.production | Browser-visible Kakao JavaScript key; restrict allowed domains in Kakao Developers |
 | `VITE_API_BASE_URL` | frontend | `/api` |
 | `RPI5_HOST` | backend | RPi5 IP/domain |
 | `RPI5_USER` | backend | SSH username |
 
-> Never commit `.env`.
+> Never commit server-side `.env` files or REST/Admin keys. The committed
+> `frontend/.env.production` contains browser-visible Vite variables only.
 
 ---
 
