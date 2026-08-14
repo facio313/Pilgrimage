@@ -39,6 +39,8 @@ frontend/dist-ssr/
 
 # Docker
 .docker/
+dbmnt/
+dbmnt-rootless/
 
 # IDE
 .vscode/*
