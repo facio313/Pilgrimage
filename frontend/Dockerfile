@@ -5,6 +5,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+ARG VITE_SSO_ENABLED=false
+ENV VITE_SSO_ENABLED=$VITE_SSO_ENABLED
 RUN npm run build
 
 FROM nginx:stable-alpine

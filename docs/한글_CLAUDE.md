@@ -20,7 +20,7 @@
 |------|----|
 | 목적 | 테마 기반 관광 경로 추천 + GPS 30분 체류 인증 |
 | 배포 대상 | Raspberry Pi 5 (ARM64) + Ubuntu 24.04 LTS |
-| 인증 | SimpleJWT (Access 1h / Refresh 14d) |
+| 인증 | bonifacio.work Authelia 통합 로그인 → 신뢰 프록시 교환 → SimpleJWT (Access 1h / Refresh 14d) |
 | 좌표계 | SRID 4326 (WGS84) — Kakao Maps와 동일 |
 
 ---
@@ -265,6 +265,8 @@ cd frontend && VITE_KAKAO_JS_KEY=dummy node_modules/.bin/vite build
 | `KAKAO_JS_KEY` | 카카오 JS API 키 (백엔드 참조용) |
 | `VITE_KAKAO_JS_KEY` | 카카오 JS API 키 (프론트 빌드 주입) |
 | `VITE_API_BASE_URL` | `/api` |
+| `PILGRIMAGE_SSO_ENABLED` | 운영에서 `true`; Nginx Authelia 인증 헤더로만 JWT 발급 |
+| `VITE_SSO_ENABLED` | 운영 프런트 빌드에서 `true`; 자동 교환 및 중앙 로그아웃 사용 |
 | `RPI5_HOST` | RPi5 IP/도메인 |
 | `RPI5_USER` | SSH 사용자명 |
 
@@ -279,5 +281,11 @@ cd frontend && VITE_KAKAO_JS_KEY=dummy node_modules/.bin/vite build
 - **좌표 순서** — PostGIS `Point(lng, lat)`, Kakao Maps `LatLng(lat, lng)` — 혼동 주의
 - **후기 작성** — `VisitLog.status == "CERTIFIED"` 일 때만 허용 (serializer 검증)
 - **경로 공유** — `/shared/:token` 은 인증 없이 접근 가능 (`AllowAny`)
+- **통합 로그인** — 일반 화면/API는 호스트 Nginx의 Authelia
+  `auth_request`를 통과해야 하며, Django는 프록시가 덮어쓴
+  `Remote-User`/`Remote-Email`만 신뢰한다. 운영에서는 로컬 로그인과
+  회원가입을 비활성화한다.
+- **공개 예외** — `/pilgrimage/shared/:token`, 해당 정적 자산,
+  `/api/shared/:token/`, `/api/health/`에는 SSO를 강제하지 않는다.
 
 ---

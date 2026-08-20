@@ -21,6 +21,7 @@ services:
       POSTGRES_HOST: cksDB
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://pilgrimageRedis:6379/0
+      PILGRIMAGE_SSO_ENABLED: ${PILGRIMAGE_SSO_ENABLED:-false}
     command: >
       sh -c "python manage.py collectstatic --noinput &&
              python manage.py migrate --noinput &&
@@ -34,6 +35,10 @@ services:
 
   pilgrimageFrontend:
     image: ${PILGRIMAGE_FRONTEND_IMAGE:-ghcr.io/facio313/pilgrimage-frontend:latest}
+    build:
+      context: ./frontend
+      args:
+        VITE_SSO_ENABLED: ${PILGRIMAGE_SSO_ENABLED:-false}
     container_name: pilgrimageFrontend
     depends_on:
       - pilgrimageBackend

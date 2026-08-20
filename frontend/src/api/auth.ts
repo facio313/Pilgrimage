@@ -23,3 +23,8 @@ export async function login(email: string, password: string): Promise<LoginRespo
   });
   return res.data;
 }
+
+export async function exchangeSso(): Promise<LoginResponse> {
+  const res = await apiClient.post<LoginResponse>('/auth/sso/');
+  return res.data;
+}

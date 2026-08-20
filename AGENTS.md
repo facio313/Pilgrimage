@@ -182,7 +182,7 @@ curl -s -X POST http://localhost:57332/mcp \
 |------|-------|
 | Purpose | Theme-based tourism route recommendation + GPS 30-min stay verification |
 | Deployment | Raspberry Pi 5 (ARM64) + Ubuntu 24.04 LTS |
-| Auth | SimpleJWT (Access 1h / Refresh 14d) |
+| Auth | bonifacio.work Authelia SSO → trusted proxy identity exchange → SimpleJWT (Access 1h / Refresh 14d) |
 | Coordinate system | SRID 4326 (WGS84) — same as Kakao Maps |
 
 ---
@@ -326,6 +326,15 @@ Pilgrimage/
 - The backend joins both the application `pilgrimage` network (for Redis) and the external `cksDB` network. Application deploys never create, stop, or remove the database container.
 - The stopped legacy `pilgrimageDB` container and `/home/cks/pilgrimage/dbmnt-rootless` are rollback-only and must not be restarted or deleted until the migration retention period ends.
 - The frontend proxy configuration is baked into its image; production does not bind-mount a repository Nginx file.
+- Production sets `PILGRIMAGE_SSO_ENABLED=true` and builds the frontend with
+  `VITE_SSO_ENABLED=true`. Host Nginx must run Authelia `auth_request`, discard
+  client identity headers, and overwrite `Remote-User`, `Remote-Email`,
+  `Remote-Name`, and `Remote-Groups`. The loopback frontend proxy forwards only
+  those trusted headers to Django; direct local login and registration are
+  disabled in SSO mode.
+- `/pilgrimage/shared/:token`, its Vite assets, and
+  `/api/shared/:token/` remain public. Do not place the SSO gate on those paths.
+  `/api/health/` also remains a non-sensitive deployment health endpoint.
 - Deployment must never run a global image/system prune or remove application volumes.
 
 ---
@@ -440,6 +449,8 @@ cd frontend && node_modules/.bin/vite build
 | `KAKAO_JS_KEY` | backend | Kakao JS API key (server-side reference) |
 | `VITE_KAKAO_JS_KEY` | frontend/.env.production | Browser-visible Kakao JavaScript key; restrict allowed domains in Kakao Developers |
 | `VITE_API_BASE_URL` | frontend | `/api` |
+| `PILGRIMAGE_SSO_ENABLED` | backend/Compose | `true` only behind the host Authelia `auth_request` boundary |
+| `VITE_SSO_ENABLED` | frontend build | Enables startup identity exchange and central logout in the production bundle |
 | `RPI5_HOST` | backend | RPi5 IP/domain |
 | `RPI5_USER` | backend | SSH username |
 

@@ -53,6 +53,8 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ./frontend
+          build-args: |
+            VITE_SSO_ENABLED=true
           platforms: linux/arm64
           push: true
           pull: true

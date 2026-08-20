@@ -112,3 +112,7 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
 }
+
+# The production reverse proxy authenticates users with the portfolio-wide
+# Authelia service and overwrites these identity headers before proxying.
+PILGRIMAGE_SSO_ENABLED = config("PILGRIMAGE_SSO_ENABLED", default=False, cast=bool)

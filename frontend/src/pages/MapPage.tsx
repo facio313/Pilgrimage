@@ -16,6 +16,7 @@ const SAVED_POINT_HIT_RADIUS_M = 40;
 const COMPACT_NAV_MAX_WIDTH = 1024;
 const DRAWER_ANIMATION_MS = 280;
 const DRAWER_EDGE_GAP_PX = 16;
+const SSO_ENABLED = import.meta.env.VITE_SSO_ENABLED === 'true';
 
 interface PopoverExtra {
   spot?: Spot;
@@ -64,6 +65,12 @@ export function MapPage() {
   const navigate = useNavigate();
   const { theme, spotIds, addSpot, removeSpot } = useRouteDraftStore();
   const { accessToken, userEmail, userNickname, clear } = useAuthStore();
+  const logout = () => {
+    clear();
+    if (SSO_ENABLED) {
+      window.location.assign(`/sso/logout?rd=${encodeURIComponent(`${window.location.origin}/sso/`)}`);
+    }
+  };
   const [canUseCompactNav, setCanUseCompactNav] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth <= COMPACT_NAV_MAX_WIDTH : false
   );
@@ -895,7 +902,7 @@ export function MapPage() {
                 onTheme={() => navigate('/themes')}
                 onAuto={() => navigate('/route/auto')}
                 onSave={() => navigate('/route/save')}
-                onLogout={clear}
+                onLogout={logout}
                 onRouteAdjust={() => setIsRouteAdjustOpen((v) => !v)}
                 onRouteAnalysis={() => setIsRouteAnalysisOpen((v) => !v)}
               />
@@ -919,7 +926,7 @@ export function MapPage() {
               )}
             </div>
             <div className="map-toolbar__right">
-              <button onClick={clear}>로그아웃</button>
+              <button onClick={logout}>로그아웃</button>
             </div>
           </div>
         )}
@@ -1421,4 +1428,3 @@ function RouteAdjustPanel({ points, onReorder, onClose }: RouteAdjustPanelProps)
     </div>
   );
 }
-
