@@ -68,7 +68,7 @@ export function RouteSavePage() {
     if (!savedRoute) return;
     try {
       const { share_token } = await shareRoute(savedRoute.id);
-      setShareLink(`${window.location.origin}/shared/${share_token}`);
+      setShareLink(`${window.location.origin}/pilgrimage/shared/${share_token}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '공유 링크 생성 실패');
     }

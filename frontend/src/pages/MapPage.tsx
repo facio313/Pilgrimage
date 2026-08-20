@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useKakaoMap } from '../hooks/useKakaoMap';
 import { listSpots, getNearbyRecommend, upsertSpot, type Spot, type NearbySpot } from '../api/spots';
 import { getDirections, formatDistance, formatDuration, type DirectionsResult } from '../api/directions';
-import { login, register } from '../api/auth';
+import { login, register, revokeSession } from '../api/auth';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { useRouteDraftStore } from '../store/route';
@@ -64,11 +64,18 @@ interface RouteGroup {
 export function MapPage() {
   const navigate = useNavigate();
   const { theme, spotIds, addSpot, removeSpot } = useRouteDraftStore();
-  const { accessToken, userEmail, userNickname, clear } = useAuthStore();
-  const logout = () => {
-    clear();
-    if (SSO_ENABLED) {
-      window.location.assign(`/sso/logout?rd=${encodeURIComponent(`${window.location.origin}/sso/`)}`);
+  const { accessToken, refreshToken, userEmail, userNickname, clear } = useAuthStore();
+  const logout = async () => {
+    try {
+      if (refreshToken) await revokeSession(refreshToken);
+    } catch {
+      // Central logout must still run if local token revocation is unavailable.
+    } finally {
+      clear();
+      if (SSO_ENABLED) {
+        const destination = `${window.location.origin}/`;
+        window.location.replace(`/sso/logout?rd=${encodeURIComponent(destination)}`);
+      }
     }
   };
   const [canUseCompactNav, setCanUseCompactNav] = useState(() =>

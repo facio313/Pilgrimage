@@ -3,6 +3,8 @@ from pathlib import Path
 
 from decouple import config
 
+from common.edge_secret import load_edge_secret
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # GeoDjango - GDAL/GEOS/PROJ paths (macOS Homebrew)
@@ -22,6 +24,7 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     # Local apps
     "apps.users",
@@ -97,7 +100,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # DRF
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.users.authentication.SsoBoundJWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -116,3 +119,10 @@ SIMPLE_JWT = {
 # The production reverse proxy authenticates users with the portfolio-wide
 # Authelia service and overwrites these identity headers before proxying.
 PILGRIMAGE_SSO_ENABLED = config("PILGRIMAGE_SSO_ENABLED", default=False, cast=bool)
+PILGRIMAGE_SSO_EDGE_SECRET_FILE = config("PILGRIMAGE_SSO_EDGE_SECRET_FILE", default="")
+PILGRIMAGE_SSO_EDGE_SECRET = load_edge_secret(
+    enabled=PILGRIMAGE_SSO_ENABLED,
+    file_path=PILGRIMAGE_SSO_EDGE_SECRET_FILE,
+    fallback=config("PILGRIMAGE_SSO_EDGE_SECRET", default=""),
+)
+REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")

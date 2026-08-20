@@ -201,7 +201,7 @@ curl -s -X POST http://localhost:57332/mcp \
 | `.env`, `.gitignore` | ✅ Done |
 | `pyproject.toml` + `package.json` init | ✅ Done |
 | Local PostgreSQL (PostGIS) + Redis install and DB creation | ✅ Done |
-| GitHub Actions (`ci.yml`, `deploy.yml`) | ⬜ Pending |
+| GitHub Actions (`deploy.yml` x64 validation gate + ARM64 deploy) | ✅ Done |
 
 ### Phase 2 · Implementation
 > Read before coding: [`specs/functions.md`](specs/functions.md) · [`specs/schema.md`](specs/schema.md) · [`specs/api.md`](specs/api.md)
@@ -227,7 +227,7 @@ curl -s -X POST http://localhost:57332/mcp \
 | Celery + django-celery-beat (KTO API scheduled sync) | ⬜ Pending |
 | `docker-compose.yml` | ✅ Done |
 | Dockerfile (backend, frontend) ARM64 optimization | ✅ Done |
-| GitHub Actions deploy.yml (native ARM64 build → GHCR → RPi5 SSH) | ✅ Done (`DEPLOY_KEY` secret 필요) |
+| GitHub Actions deploy.yml (x64 test gate → native ARM64 build → GHCR → RPi5 SSH) | ✅ Done (`DEPLOY_KEY` secret 필요) |
 
 ---
 
@@ -313,28 +313,45 @@ Pilgrimage/
 ├── frontend/nginx.conf      # Baked into the frontend image: /api/ → backend:8000, / → SPA
 ├── docker-compose.yml  # Production (ghcr.io images)
 └── .github/workflows/
-    ├── ci.yml               # PR/push → ruff + pytest + tsc build
-    └── deploy.yml           # main push → ARM64 build → RPi5 SSH deploy
+    └── deploy.yml           # main push → x64 validation → ARM64 build → RPi5 SSH deploy
 ```
 
 ### Production deployment
 
+- The `validate` job runs first on x64 Ubuntu with isolated PostGIS 17/PostGIS
+  3.5 and Redis 8.2.7 services. It must pass full backend Ruff, migration drift and
+  apply checks, pytest, frontend Vitest/build, and Compose configuration
+  validation before images can be built or deployed.
+- Ruff excludes only generated `**/migrations/*.py` files via `pyproject.toml`;
+  all non-migration backend Python source must pass `ruff check .`.
+- CI keeps SSO disabled and uses only explicit non-production test values. It
+  must never load or require the production edge-secret file.
+- The sequential timeout budget is capped at 80 minutes: 20 minutes for x64
+  validation and 60 minutes for the dependent ARM64 build/deploy job, including
+  up to 20 minutes waiting for the shared host deployment lock.
 - GitHub Actions builds the backend and frontend natively on an ARM64 runner.
 - Both images are pushed to GHCR with immutable commit-SHA tags and a convenience `latest` tag.
 - The server receives only `deploy pilgrimage <commit-sha>` through the restricted CI SSH key.
 - Production PostgreSQL is the shared, host-unpublished `cksDB` container. Pilgrimage uses its own `pilgrimage` database and restricted `pilgrimage` login role.
 - The backend joins both the application `pilgrimage` network (for Redis) and the external `cksDB` network. Application deploys never create, stop, or remove the database container.
+- Production Redis is the digest-pinned `pilgrimageRedis` service on only the application network, with no host port and a dedicated persistent AOF volume. Deploys must require its health and preserve both its container and volume; never reuse another application's Redis.
 - The stopped legacy `pilgrimageDB` container and `/home/cks/pilgrimage/dbmnt-rootless` are rollback-only and must not be restarted or deleted until the migration retention period ends.
 - The frontend proxy configuration is baked into its image; production does not bind-mount a repository Nginx file.
 - Production sets `PILGRIMAGE_SSO_ENABLED=true` and builds the frontend with
   `VITE_SSO_ENABLED=true`. Host Nginx must run Authelia `auth_request`, discard
   client identity headers, and overwrite `Remote-User`, `Remote-Email`,
-  `Remote-Name`, and `Remote-Groups`. The loopback frontend proxy forwards only
-  those trusted headers to Django; direct local login and registration are
-  disabled in SSO mode.
+  `Remote-Name`, `Remote-Groups`, and the per-application
+  `X-Portfolio-Edge-Secret`. The loopback frontend proxy forwards only those
+  trusted headers to Django; direct local login and registration are disabled
+  in SSO mode. Every access/refresh token is bound to immutable
+  `User.sso_subject == Remote-User`; never link by Django username. Production
+  secrets must use a restricted file mount as documented in `docs/sso.md`.
+  The backend image runs as UID `10001`, effective GID `0`; rootless production
+  mounts a host `cks:cks 0640` file which appears as container `root:root 0640`.
 - `/pilgrimage/shared/:token`, its Vite assets, and
   `/api/shared/:token/` remain public. Do not place the SSO gate on those paths.
-  `/api/health/` also remains a non-sensitive deployment health endpoint.
+  `/api/health/` also remains a non-sensitive deployment readiness endpoint
+  that requires PostgreSQL and Redis but ignores all authentication headers.
 - Deployment must never run a global image/system prune or remove application volumes.
 
 ---
@@ -450,6 +467,9 @@ cd frontend && node_modules/.bin/vite build
 | `VITE_KAKAO_JS_KEY` | frontend/.env.production | Browser-visible Kakao JavaScript key; restrict allowed domains in Kakao Developers |
 | `VITE_API_BASE_URL` | frontend | `/api` |
 | `PILGRIMAGE_SSO_ENABLED` | backend/Compose | `true` only behind the host Authelia `auth_request` boundary |
+| `PILGRIMAGE_SSO_EDGE_SECRET_HOST_FILE` | Compose host | Absolute host path to the dedicated `cks:cks` mode-0640 edge-secret file |
+| `PILGRIMAGE_SSO_EDGE_SECRET_FILE` | backend/Compose | Preferred in-container path; direct runs accept runtime-owner mode-0400/0600 |
+| `PILGRIMAGE_SSO_EDGE_SECRET` | backend/Compose | Development-only >=32-byte printable ASCII fallback |
 | `VITE_SSO_ENABLED` | frontend build | Enables startup identity exchange and central logout in the production bundle |
 | `RPI5_HOST` | backend | RPi5 IP/domain |
 | `RPI5_USER` | backend | SSH username |

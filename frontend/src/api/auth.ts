@@ -28,3 +28,7 @@ export async function exchangeSso(): Promise<LoginResponse> {
   const res = await apiClient.post<LoginResponse>('/auth/sso/');
   return res.data;
 }
+
+export async function revokeSession(refresh: string): Promise<void> {
+  await apiClient.post('/auth/logout/', { refresh }, { timeout: 3000 });
+}

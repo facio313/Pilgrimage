@@ -1,4 +1,6 @@
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -75,11 +77,15 @@ class RouteViewSet(
 
 
 class SharedRouteView(RetrieveAPIView):
+    authentication_classes = []
     serializer_class = RouteSerializer
     permission_classes = [AllowAny]
     lookup_field = "share_token"
 
     def get_object(self):
         token = self.kwargs[self.lookup_field]
-        share = get_object_or_404(RouteShare, share_token=token)
+        share = get_object_or_404(
+            RouteShare.objects.filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())),
+            share_token=token,
+        )
         return share.route

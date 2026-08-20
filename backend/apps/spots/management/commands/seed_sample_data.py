@@ -1,5 +1,4 @@
 import random
-import uuid
 from datetime import timedelta
 from decimal import Decimal
 

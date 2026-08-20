@@ -1,6 +1,10 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from .authentication import validate_refresh_binding
 
 User = get_user_model()
 
@@ -31,3 +35,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         user.set_password(password)
         user.save()
         return user
+
+
+class SsoBoundTokenRefreshSerializer(TokenRefreshSerializer):
+    def validate(self, attrs):
+        if settings.PILGRIMAGE_SSO_ENABLED:
+            refresh = RefreshToken(attrs["refresh"])
+            validate_refresh_binding(
+                request=self.context["request"],
+                refresh_token=refresh,
+            )
+        return super().validate(attrs)

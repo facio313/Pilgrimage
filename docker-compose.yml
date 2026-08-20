@@ -1,18 +1,33 @@
 services:
   pilgrimageRedis:
-    image: redis:7-alpine
+    image: redis:8.2.7-alpine@sha256:223b183cbc49f5ff48728e1fc52ccf101f05072decad2bd9867281a3c9bf75fd
+    platform: linux/arm64
     container_name: pilgrimageRedis
-    ports:
-      - "127.0.0.1:6379:6379"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    volumes:
+      - pilgrimage_redis_data:/data
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     networks:
       - pilgrimage
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   pilgrimageBackend:
     image: ${PILGRIMAGE_BACKEND_IMAGE:-ghcr.io/facio313/pilgrimage-backend:latest}
     container_name: pilgrimageBackend
+    user: "10001:0"
     depends_on:
-      - pilgrimageRedis
+      pilgrimageRedis:
+        condition: service_healthy
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
@@ -22,6 +37,16 @@ services:
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://pilgrimageRedis:6379/0
       PILGRIMAGE_SSO_ENABLED: ${PILGRIMAGE_SSO_ENABLED:-false}
+      # The bind mount below always exposes this stable in-container path.
+      PILGRIMAGE_SSO_EDGE_SECRET_FILE: /run/secrets/pilgrimage_sso_edge_secret
+      # Development-only fallback; file-backed configuration takes precedence.
+      PILGRIMAGE_SSO_EDGE_SECRET: ${PILGRIMAGE_SSO_EDGE_SECRET:-}
+    volumes:
+      # Rootless production must use a cks:cks mode-0640 regular file. It maps
+      # to root:root 0640 while this non-root process retains only effective GID 0.
+      # /dev/null keeps non-SSO deployments configuration-free and fails closed
+      # if SSO is accidentally enabled without a real file.
+      - ${PILGRIMAGE_SSO_EDGE_SECRET_HOST_FILE:-/dev/null}:/run/secrets/pilgrimage_sso_edge_secret:ro
     command: >
       sh -c "python manage.py collectstatic --noinput &&
              python manage.py migrate --noinput &&
@@ -32,6 +57,18 @@ services:
       - pilgrimage
       - cksDB
     restart: always
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=2).read()
+      interval: 15s
+      timeout: 4s
+      retries: 5
+      start_period: 30s
 
   pilgrimageFrontend:
     image: ${PILGRIMAGE_FRONTEND_IMAGE:-ghcr.io/facio313/pilgrimage-frontend:latest}
@@ -41,7 +78,8 @@ services:
         VITE_SSO_ENABLED: ${PILGRIMAGE_SSO_ENABLED:-false}
     container_name: pilgrimageFrontend
     depends_on:
-      - pilgrimageBackend
+      pilgrimageBackend:
+        condition: service_healthy
     ports:
       - "127.0.0.1:5174:80"
     networks:
@@ -55,3 +93,6 @@ networks:
   cksDB:
     external: true
     name: cksDB
+
+volumes:
+  pilgrimage_redis_data:

@@ -15,7 +15,14 @@ RUN pip install --no-cache-dir uv && \
     pip install --no-cache-dir -r requirements.txt && \
     rm requirements.txt
 
-COPY . .
+RUN useradd --uid 10001 --gid 0 --no-create-home --home-dir /app \
+        --shell /usr/sbin/nologin pilgrimage && \
+    mkdir -p /app/staticfiles && \
+    chown -R 10001:0 /app
+
+COPY --chown=10001:0 . .
+
+USER 10001:0
 
 EXPOSE 8000
 

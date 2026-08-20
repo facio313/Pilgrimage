@@ -108,7 +108,10 @@ def place_nearby(request):
     }
     headers = {
         "X-Goog-Api-Key": GOOGLE_PLACES_KEY,
-        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.photos,places.googleMapsUri",
+        "X-Goog-FieldMask": (
+            "places.id,places.displayName,places.formattedAddress,places.rating,"
+            "places.userRatingCount,places.photos,places.googleMapsUri"
+        ),
     }
 
     results = []

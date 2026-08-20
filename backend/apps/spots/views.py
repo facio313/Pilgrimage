@@ -22,8 +22,8 @@ EXCLUDE_CENTER_M = 50
 
 
 def _destination_point(lat, lng, bearing_deg, distance_m):
-    R = 6_371_000
-    d = distance_m / R
+    earth_radius_m = 6_371_000
+    d = distance_m / earth_radius_m
     brng = math.radians(bearing_deg)
     lat1 = math.radians(lat)
     lng1 = math.radians(lng)
@@ -49,7 +49,7 @@ def _calc_bearing(lat1, lng1, lat2, lng2):
 
 
 def _haversine(lat1, lng1, lat2, lng2):
-    R = 6_371_000
+    earth_radius_m = 6_371_000
     dlat = math.radians(lat2 - lat1)
     dlng = math.radians(lng2 - lng1)
     a = (
@@ -58,7 +58,7 @@ def _haversine(lat1, lng1, lat2, lng2):
         * math.cos(math.radians(lat2))
         * math.sin(dlng / 2) ** 2
     )
-    return 2 * R * math.asin(math.sqrt(a))
+    return 2 * earth_radius_m * math.asin(math.sqrt(a))
 
 
 class SpotViewSet(
