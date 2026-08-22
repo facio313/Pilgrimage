@@ -102,14 +102,27 @@ headers again for both public paths as defense in depth.
 `User.sso_subject` field and cannot be changed or cleared after it is linked.
 Pilgrimage does not look up or link accounts by Django `username`.
 
-SSO refresh and access tokens contain the `sso_subject` claim. In SSO mode,
+`Remote-Groups` is part of the same trusted assertion as the subject and is
+accepted only after the per-app edge secret succeeds. The complete allowed
+wire values are `user`, `user,developer`, and `user,developer,admin`. They are
+ordered prefixes with no whitespace. Unknown names, legacy plural names,
+duplicates, gaps, reordering, or empty segments fail closed. Roles are
+hierarchical: `developer` includes `user`, and `admin` includes both. Local
+branches retain the equivalent Django mapping (authenticated user, staff,
+superuser), but SSO mode never grants a role from local `is_staff`,
+`is_superuser`, group, or permission rows.
+
+SSO refresh and access tokens contain `sso_subject`, `sso_groups`, and
+`sso_role` claims. In SSO mode,
 every authenticated access, refresh, and logout request must satisfy all of the
 following:
 
 1. the edge secret is valid;
 2. current `Remote-User` equals the token subject;
 3. the token subject equals the current user's immutable `sso_subject`;
-4. the user is active.
+4. current `Remote-Groups` exactly equals the token's canonical group prefix
+   and effective role;
+5. the user is active.
 
 Tokens issued before this migration intentionally stop working in SSO mode.
 
@@ -140,6 +153,45 @@ username.
 For a safe rollout, apply migration `users.0002_user_sso_identity`, approve the
 existing user, mount the edge secret, update the outer proxy header injection,
 and only then send traffic to the new containers.
+
+## Legacy local-auth cleanup and ownership projection
+
+The cleanup command is aggregate-only by default and requires the exact
+canonical subject. It emits no username, email, primary key, or session token:
+
+```bash
+python manage.py cleanup_sso_legacy_auth --canonical-subject cks
+```
+
+Review the counts for every ownership field before applying. `--apply` opens
+one transaction, locks the canonical and unlinked users plus every selected
+domain row, reassigns `Review.user`, `VisitLog.user`, `GpsLog.user`, and
+`Route.creator` to the canonical subject projection, then removes the now
+unreferenced legacy users. An unexpected reverse relation aborts the entire
+transaction before any user deletion. The same transaction removes usable
+passwords, local staff/superuser and Django permission grants, Django sessions,
+JWT outstanding tokens, and local Django-admin history. Admin log entries are
+deleted rather than reassigned because relabeling a past local actor as the
+canonical subject would falsify audit meaning. The aggregate output reports the
+exact deletion count. An installed app-local OAuth provider blocks the command
+rather than attempting an unknown credential deletion.
+
+```bash
+python manage.py cleanup_sso_legacy_auth \
+  --canonical-subject cks \
+  --apply \
+  --expected-legacy-users 10 \
+  --expected-domain-rows 1002
+python manage.py cleanup_sso_legacy_auth --canonical-subject cks --check
+```
+
+Both `--apply` and `--check` are SSO-only. `--apply` is idempotent, but it is an
+irreversible identity consolidation and must run only after a database snapshot
+and approval of the dry-run aggregate. The two expected counts are mandatory
+compare-and-apply guards; if either changed, the command makes no changes.
+Existing domain rows survive because
+their local foreign keys become a projection of immutable
+`User.sso_subject`; neither email nor username is used as ongoing ownership.
 
 ## Deployment validation gate
 

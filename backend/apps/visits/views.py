@@ -1,10 +1,10 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.spots.models import TouristSpot
+from apps.users.permissions import IsPortfolioUser
 
 from .models import VisitLog
 from .serializers import GpsLogSerializer, VisitLogSerializer
@@ -13,11 +13,11 @@ from .services import certify_visit
 
 class GpsLogCreateView(generics.CreateAPIView):
     serializer_class = GpsLogSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsPortfolioUser]
 
 
 class CertifyVisitView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsPortfolioUser]
 
     def post(self, request, spot_id):
         spot = get_object_or_404(TouristSpot, pk=spot_id)
@@ -27,7 +27,7 @@ class CertifyVisitView(APIView):
 
 
 class VisitStatusView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsPortfolioUser]
 
     def get(self, request, spot_id):
         certified = VisitLog.objects.filter(

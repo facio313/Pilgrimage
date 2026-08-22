@@ -354,7 +354,12 @@ Pilgrimage/
   `X-Portfolio-Edge-Secret`. The loopback frontend proxy forwards only those
   trusted headers to Django; direct local login and registration are disabled
   in SSO mode. Every access/refresh token is bound to immutable
-  `User.sso_subject == Remote-User`; never link by Django username. Production
+  `User.sso_subject == Remote-User`; never link by Django username.
+  `Remote-Groups` is accepted only as the whitespace-free ordered prefix
+  `user`, `user,developer`, or `user,developer,admin`, and the current groups
+  plus effective hierarchical role must match the JWT claims on every request.
+  Unknown, duplicate, gapped, reordered, or legacy plural groups fail closed;
+  local Django staff/superuser/group flags never grant an SSO role. Production
   secrets must use a restricted file mount as documented in `docs/sso.md`.
   The backend image runs as UID `10001`, effective GID `0`; rootless production
   mounts a host `cks:cks 0640` file which appears as container `root:root 0640`.
@@ -363,6 +368,17 @@ Pilgrimage/
   `/api/health/` also remains a non-sensitive deployment readiness endpoint
   that requires PostgreSQL and Redis but ignores all authentication headers.
 - Deployment must never run a global image/system prune or remove application volumes.
+- `cleanup_sso_legacy_auth --canonical-subject <subject>` is dry-run by
+  default. Its explicit `--apply` path must lock and project all known domain
+  ownership FKs to that subject before deleting an unlinked legacy user, abort
+  on any unclassified reverse relation, and remove local passwords,
+  permissions, sessions, tokens, and local admin history. Admin `LogEntry` rows
+  must be deleted with an exact aggregate count, never relabeled as actions by
+  the canonical subject. `--apply` must require reviewed expected
+  user/domain-row counts and abort if either changes. Never apply it to
+  production without reviewing the aggregate output and taking a database
+  snapshot; finish with `--check`. SSO cleanup must never fall back to email or
+  username as ownership.
 
 ### Branch-bound authentication
 

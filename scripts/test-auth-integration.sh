@@ -17,6 +17,7 @@ urls = (root / "backend" / "config" / "urls.py").read_text(encoding="utf-8")
 package = json.loads((root / "frontend" / "package.json").read_text(encoding="utf-8"))
 workflow = (root / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 dockerignore = (root / ".dockerignore").read_text(encoding="utf-8")
+nginx = (root / "frontend" / "nginx.conf").read_text(encoding="utf-8")
 
 
 def require(condition, message):
@@ -56,6 +57,14 @@ require(
 )
 require("portfolio-auth-mode.sh contract" in entrypoint, "frontend entrypoint bypasses the resolver")
 require("if not settings.PILGRIMAGE_SSO_ENABLED" in urls, "SSO mode still registers Django admin")
+require(
+    "proxy_set_header Remote-Groups $http_remote_groups;" in nginx,
+    "protected proxy does not forward central role groups",
+)
+require(
+    "proxy_set_header X-Portfolio-Edge-Secret $http_x_portfolio_edge_secret;" in nginx,
+    "protected proxy does not forward the per-app edge credential",
+)
 
 print("pilgrimage auth integration contract: ok")
 PY

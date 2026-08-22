@@ -5,8 +5,10 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import RetrieveAPIView
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+
+from apps.users.permissions import IsPortfolioUser
 
 from .models import Route, RouteShare, RouteSpot
 from .serializers import RouteSerializer, RouteShareSerializer
@@ -20,7 +22,7 @@ class RouteViewSet(
 ):
     queryset = Route.objects.all()
     serializer_class = RouteSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsPortfolioUser]
 
     def get_object(self):
         route = super().get_object()

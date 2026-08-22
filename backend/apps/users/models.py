@@ -25,6 +25,12 @@ class User(AbstractUser):
     class Meta:
         db_table = "users"
 
+    @property
+    def ownership_subject(self):
+        """Central subject projected through existing domain ownership FKs."""
+
+        return self.sso_subject
+
     def save(self, *args, **kwargs):
         if not self._state.adding and self.pk:
             previous_subject = type(self).objects.filter(pk=self.pk).values_list("sso_subject", flat=True).first()

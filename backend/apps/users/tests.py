@@ -18,12 +18,14 @@ def sso_headers(
     subject="portfolio-owner",
     email="owner@example.test",
     name="Portfolio Owner",
+    groups="user",
     secret=EDGE_SECRET,
 ):
     return {
         "HTTP_REMOTE_USER": subject,
         "HTTP_REMOTE_EMAIL": email,
         "HTTP_REMOTE_NAME": name,
+        "HTTP_REMOTE_GROUPS": groups,
         "HTTP_X_PORTFOLIO_EDGE_SECRET": secret,
     }
 
@@ -52,6 +54,10 @@ class SsoAuthenticationTests(APITestCase):
         self.assertFalse(user.has_usable_password())
         self.assertEqual(RefreshToken(response.data["refresh"])["sso_subject"], "portfolio-owner")
         self.assertEqual(AccessToken(response.data["access"])["sso_subject"], "portfolio-owner")
+        self.assertEqual(RefreshToken(response.data["refresh"])["sso_role"], "user")
+        self.assertEqual(AccessToken(response.data["access"])["sso_groups"], ["user"])
+        self.assertEqual(response.data["role"], "user")
+        self.assertEqual(response.data["groups"], ["user"])
 
         user.set_password("legacy-local-password")
         user.save(update_fields=["password"])
@@ -171,6 +177,54 @@ class SsoAuthenticationTests(APITestCase):
             **sso_headers(subject="another-owner"),
         )
         self.assertEqual(wrong_subject.status_code, 401)
+
+        changed_role = self.client.get(
+            route_url,
+            HTTP_AUTHORIZATION=f"Bearer {access}",
+            **sso_headers(groups="developer"),
+        )
+        self.assertEqual(changed_role.status_code, 401)
+
+    def test_groups_are_edge_bound_and_resolve_to_the_highest_central_role(self):
+        self.assertEqual(self.exchange(groups="unrelated").status_code, 403)
+        self.assertEqual(self.exchange(groups="").status_code, 403)
+        self.assertEqual(
+            self.exchange(groups="user", secret="wrong-edge-secret").status_code,
+            403,
+        )
+
+        response = self.exchange(groups="user,developer")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["groups"], ["user", "developer"])
+        self.assertEqual(response.data["role"], "developer")
+        self.assertEqual(
+            AccessToken(response.data["access"])["sso_groups"],
+            ["user", "developer"],
+        )
+
+        for rejected_groups in (
+            "users",
+            "owners",
+            "analytics,user",
+            "developer",
+            "admin",
+            "user,admin",
+            "developer,user",
+            "user,user",
+            "user,,developer",
+            "user, developer",
+            " user",
+            "user ",
+        ):
+            with self.subTest(groups=rejected_groups):
+                self.assertEqual(
+                    self.exchange(
+                        subject=f"rejected-{len(rejected_groups)}-{rejected_groups}",
+                        email="rejected@example.test",
+                        groups=rejected_groups,
+                    ).status_code,
+                    403,
+                )
 
     def test_refresh_requires_subject_bound_token_and_current_identity(self):
         exchange = self.exchange()

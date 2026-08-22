@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from rest_framework import generics, status
 from rest_framework.exceptions import AuthenticationFailed, ValidationError
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -14,6 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .authentication import TrustedSsoIdentity, trusted_sso_identity, validate_refresh_binding
+from .permissions import IsPortfolioUser
 from .serializers import (
     CustomTokenObtainPairSerializer,
     RegisterSerializer,
@@ -117,11 +118,13 @@ def _resolve_sso_user(identity: TrustedSsoIdentity):
         raise SsoAccountConflictError from exc
 
 
-def _issue_sso_token_pair(user):
+def _issue_sso_token_pair(user, identity: TrustedSsoIdentity):
     if not user.sso_subject:
         raise AuthenticationFailed("The account is not linked to an SSO subject.")
     refresh = RefreshToken.for_user(user)
     refresh["sso_subject"] = user.sso_subject
+    refresh["sso_groups"] = list(identity.groups)
+    refresh["sso_role"] = identity.role
     return refresh
 
 
@@ -163,13 +166,15 @@ class SsoExchangeView(APIView):
             )
         if not user.is_active:
             return Response({"detail": "This account is disabled."}, status=status.HTTP_403_FORBIDDEN)
-        refresh = _issue_sso_token_pair(user)
+        refresh = _issue_sso_token_pair(user, identity)
         return Response(
             {
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
                 "email": user.email,
                 "nickname": user.nickname,
+                "role": identity.role,
+                "groups": list(identity.groups),
             }
         )
 
@@ -179,7 +184,7 @@ class SsoBoundTokenRefreshView(TokenRefreshView):
 
 
 class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsPortfolioUser]
 
     def post(self, request):
         raw_refresh = request.data.get("refresh")

@@ -104,7 +104,7 @@ REST_FRAMEWORK = {
         "apps.users.authentication.SsoBoundJWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+        "apps.users.permissions.IsPortfolioUser",
     ],
     "EXCEPTION_HANDLER": "common.exceptions.custom_exception_handler",
 }

@@ -1,6 +1,7 @@
 from rest_framework import mixins, viewsets
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+
+from apps.users.permissions import IsPortfolioUserOrReadOnly
 
 from .models import Review
 from .serializers import ReviewSerializer
@@ -12,7 +13,7 @@ class ReviewViewSet(
     viewsets.GenericViewSet,
 ):
     serializer_class = ReviewSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [IsPortfolioUserOrReadOnly]
 
     def get_queryset(self):
         qs = Review.objects.select_related("user", "spot").order_by("-rating", "-created_at")
