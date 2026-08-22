@@ -53,8 +53,12 @@ class SsoAuthenticationTests(APITestCase):
         self.assertEqual(RefreshToken(response.data["refresh"])["sso_subject"], "portfolio-owner")
         self.assertEqual(AccessToken(response.data["access"])["sso_subject"], "portfolio-owner")
 
+        user.set_password("legacy-local-password")
+        user.save(update_fields=["password"])
         repeated = self.exchange(email="OWNER@example.test", name="Changed Name")
         self.assertEqual(repeated.status_code, 200)
+        user.refresh_from_db()
+        self.assertFalse(user.has_usable_password())
         self.assertEqual(User.objects.filter(sso_subject="portfolio-owner").count(), 1)
 
     def test_remote_username_never_takes_over_a_local_username(self):
@@ -88,6 +92,7 @@ class SsoAuthenticationTests(APITestCase):
         local.refresh_from_db()
         self.assertEqual(local.sso_subject, "portfolio-owner")
         self.assertFalse(local.sso_link_allowed)
+        self.assertFalse(local.has_usable_password())
 
         self.assertEqual(
             self.exchange(subject="different-subject", email="owner@example.test").status_code,
@@ -109,6 +114,7 @@ class SsoAuthenticationTests(APITestCase):
         user.refresh_from_db()
         self.assertTrue(user.email_verified)
         self.assertTrue(user.sso_link_allowed)
+        self.assertFalse(user.has_usable_password())
 
     def test_prepare_link_command_rejects_invalid_email(self):
         user = User.objects.create_user(
@@ -241,6 +247,30 @@ class SsoAuthenticationTests(APITestCase):
 
 @override_settings(PILGRIMAGE_SSO_ENABLED=False)
 class LocalAuthenticationCompatibilityTests(APITestCase):
+    def test_local_registration_and_login_work_without_edge_headers(self):
+        registered = self.client.post(
+            "/api/auth/register/",
+            {
+                "email": "local@example.test",
+                "password": "local-only-password",
+                "nickname": "Local User",
+            },
+            format="json",
+        )
+        self.assertEqual(registered.status_code, 201)
+
+        logged_in = self.client.post(
+            "/api/auth/login/",
+            {
+                "username": "local@example.test",
+                "password": "local-only-password",
+            },
+            format="json",
+        )
+        self.assertEqual(logged_in.status_code, 200)
+        self.assertIn("access", logged_in.data)
+        self.assertIn("refresh", logged_in.data)
+
     def test_refresh_remains_compatible_when_sso_is_disabled(self):
         user = User.objects.create_user(
             username="local-user",

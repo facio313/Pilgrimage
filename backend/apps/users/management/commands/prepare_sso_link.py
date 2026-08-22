@@ -38,6 +38,9 @@ class Command(BaseCommand):
                 raise CommandError("This user already has an SSO subject.")
             user.email_verified = True
             user.sso_link_allowed = True
-            user.save(update_fields=["email_verified", "sso_link_allowed"])
+            user.set_unusable_password()
+            user.save(
+                update_fields=["email_verified", "sso_link_allowed", "password"]
+            )
 
         self.stdout.write(self.style.SUCCESS("The user is approved for one SSO link."))

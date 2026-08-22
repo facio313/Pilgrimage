@@ -23,6 +23,11 @@ services:
 
   pilgrimageBackend:
     image: ${PILGRIMAGE_BACKEND_IMAGE:-ghcr.io/facio313/pilgrimage-backend:latest}
+    build:
+      context: ./backend
+      args:
+        PORTFOLIO_BRANCH: ${PORTFOLIO_BRANCH:?PORTFOLIO_BRANCH is required}
+        PORTFOLIO_AUTH_MODE: ${PORTFOLIO_AUTH_MODE:?PORTFOLIO_AUTH_MODE is required}
     container_name: pilgrimageBackend
     user: "10001:0"
     depends_on:
@@ -36,7 +41,9 @@ services:
       POSTGRES_HOST: cksDB
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://pilgrimageRedis:6379/0
-      PILGRIMAGE_SSO_ENABLED: ${PILGRIMAGE_SSO_ENABLED:-false}
+      PORTFOLIO_BRANCH: ${PORTFOLIO_BRANCH:?PORTFOLIO_BRANCH is required}
+      PORTFOLIO_AUTH_MODE: ${PORTFOLIO_AUTH_MODE:?PORTFOLIO_AUTH_MODE is required}
+      PILGRIMAGE_SSO_ENABLED: ${PILGRIMAGE_SSO_ENABLED:?PILGRIMAGE_SSO_ENABLED is required}
       # The bind mount below always exposes this stable in-container path.
       PILGRIMAGE_SSO_EDGE_SECRET_FILE: /run/secrets/pilgrimage_sso_edge_secret
       # Development-only fallback; file-backed configuration takes precedence.
@@ -73,9 +80,12 @@ services:
   pilgrimageFrontend:
     image: ${PILGRIMAGE_FRONTEND_IMAGE:-ghcr.io/facio313/pilgrimage-frontend:latest}
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
-        VITE_SSO_ENABLED: ${PILGRIMAGE_SSO_ENABLED:-false}
+        PORTFOLIO_BRANCH: ${PORTFOLIO_BRANCH:?PORTFOLIO_BRANCH is required}
+        PORTFOLIO_AUTH_MODE: ${PORTFOLIO_AUTH_MODE:?PORTFOLIO_AUTH_MODE is required}
+        VITE_SSO_ENABLED: ${VITE_SSO_ENABLED:?VITE_SSO_ENABLED is required}
     container_name: pilgrimageFrontend
     depends_on:
       pilgrimageBackend:

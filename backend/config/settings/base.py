@@ -4,6 +4,7 @@ from pathlib import Path
 from decouple import config
 
 from common.edge_secret import load_edge_secret
+from config.auth_mode import resolve_portfolio_auth_contract
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -116,9 +117,25 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
 }
 
-# The production reverse proxy authenticates users with the portfolio-wide
-# Authelia service and overwrites these identity headers before proxying.
-PILGRIMAGE_SSO_ENABLED = config("PILGRIMAGE_SSO_ENABLED", default=False, cast=bool)
+# The Git branch is the source of truth for authentication. Local checkouts use
+# the repository resolver; packaged runtimes receive both canonical variables
+# explicitly from their build/deployment boundary.
+_portfolio_environment = {
+    name: value
+    for name in ("PORTFOLIO_BRANCH", "PORTFOLIO_AUTH_MODE", "GITHUB_REF_NAME")
+    if (value := config(name, default=None)) is not None
+}
+_portfolio_auth = resolve_portfolio_auth_contract(
+    base_dir=BASE_DIR,
+    environment=_portfolio_environment,
+    legacy_sso_name="PILGRIMAGE_SSO_ENABLED",
+    legacy_sso_value=config("PILGRIMAGE_SSO_ENABLED", default=None),
+    build_mode=config("PORTFOLIO_BUILD_AUTH_MODE", default=None),
+    build_contract_path=Path("/etc/portfolio-auth-build"),
+)
+PORTFOLIO_BRANCH = _portfolio_auth.branch
+PORTFOLIO_AUTH_MODE = _portfolio_auth.mode
+PILGRIMAGE_SSO_ENABLED = _portfolio_auth.sso_enabled
 PILGRIMAGE_SSO_EDGE_SECRET_FILE = config("PILGRIMAGE_SSO_EDGE_SECRET_FILE", default="")
 PILGRIMAGE_SSO_EDGE_SECRET = load_edge_secret(
     enabled=PILGRIMAGE_SSO_ENABLED,

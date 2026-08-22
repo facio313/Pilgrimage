@@ -1,5 +1,23 @@
 FROM python:3.13-slim
 
+ARG PORTFOLIO_BRANCH
+ARG PORTFOLIO_AUTH_MODE
+RUN case "$PORTFOLIO_BRANCH" in ""|*[!A-Za-z0-9._/-]*) exit 1 ;; esac \
+    && normalized_branch="${PORTFOLIO_BRANCH#refs/heads/}" \
+    && case "$normalized_branch" in ""|*[!A-Za-z0-9._/-]*) exit 1 ;; esac \
+    && case "$normalized_branch:$PORTFOLIO_AUTH_MODE" in \
+         main:sso|dev:sso) ;; \
+         main:*|dev:*) exit 1 ;; \
+         *:local) ;; \
+         *) exit 1 ;; \
+       esac \
+    && printf '%s\n%s\n' "$normalized_branch" "$PORTFOLIO_AUTH_MODE" \
+         > /etc/portfolio-auth-build \
+    && chmod 0444 /etc/portfolio-auth-build
+ENV PORTFOLIO_BRANCH=${PORTFOLIO_BRANCH} \
+    PORTFOLIO_AUTH_MODE=${PORTFOLIO_AUTH_MODE} \
+    PORTFOLIO_BUILD_AUTH_MODE=${PORTFOLIO_AUTH_MODE}
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gdal-bin libgdal-dev libgeos-dev libproj-dev \
     && rm -rf /var/lib/apt/lists/*

@@ -66,6 +66,9 @@ def _sync_sso_profile(user, identity: TrustedSsoIdentity):
 def _resolve_sso_user_locked(identity: TrustedSsoIdentity):
     linked = User.objects.select_for_update().filter(sso_subject=identity.subject).first()
     if linked is not None:
+        if linked.has_usable_password():
+            linked.set_unusable_password()
+            linked.save(update_fields=["password"])
         if not linked.is_active:
             return linked
         return _sync_sso_profile(linked, identity)
@@ -85,7 +88,10 @@ def _resolve_sso_user_locked(identity: TrustedSsoIdentity):
         candidate.sso_subject = identity.subject
         candidate.sso_link_allowed = False
         candidate.nickname = (identity.display_name or candidate.nickname or identity.email.split("@", 1)[0])[:50]
-        candidate.save(update_fields=["sso_subject", "sso_link_allowed", "nickname"])
+        candidate.set_unusable_password()
+        candidate.save(
+            update_fields=["sso_subject", "sso_link_allowed", "nickname", "password"]
+        )
         return candidate
 
     user = User(

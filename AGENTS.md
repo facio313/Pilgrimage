@@ -182,7 +182,7 @@ curl -s -X POST http://localhost:57332/mcp \
 |------|-------|
 | Purpose | Theme-based tourism route recommendation + GPS 30-min stay verification |
 | Deployment | Raspberry Pi 5 (ARM64) + Ubuntu 24.04 LTS |
-| Auth | bonifacio.work Authelia SSO → trusted proxy identity exchange → SimpleJWT (Access 1h / Refresh 14d) |
+| Auth | Branch contract: `main`/`dev` use bonifacio.work Authelia SSO; every other branch uses local credentials |
 | Coordinate system | SRID 4326 (WGS84) — same as Kakao Maps |
 
 ---
@@ -324,19 +324,29 @@ Pilgrimage/
   validation before images can be built or deployed.
 - Ruff excludes only generated `**/migrations/*.py` files via `pyproject.toml`;
   all non-migration backend Python source must pass `ruff check .`.
-- CI keeps SSO disabled and uses only explicit non-production test values. It
-  must never load or require the production edge-secret file.
+- CI injects `PORTFOLIO_BRANCH` and `PORTFOLIO_AUTH_MODE` explicitly. Validation
+  on `main` runs in SSO mode with a non-production direct test secret; it must
+  never load or require the production edge-secret file.
 - The sequential timeout budget is capped at 80 minutes: 20 minutes for x64
   validation and 60 minutes for the dependent ARM64 build/deploy job, including
   up to 20 minutes waiting for the shared host deployment lock.
 - GitHub Actions builds the backend and frontend natively on an ARM64 runner.
-- Both images are pushed to GHCR with immutable commit-SHA tags and a convenience `latest` tag.
+- `dev` runs the same validation and ARM64 image builds without a registry
+  push. Only `main` pushes immutable commit-SHA images and the convenience
+  `latest` tag, then requests the production deployment.
 - The server receives only `deploy pilgrimage <commit-sha>` through the restricted CI SSH key.
 - Production PostgreSQL is the shared, host-unpublished `cksDB` container. Pilgrimage uses its own `pilgrimage` database and restricted `pilgrimage` login role.
 - The backend joins both the application `pilgrimage` network (for Redis) and the external `cksDB` network. Application deploys never create, stop, or remove the database container.
 - Production Redis is the digest-pinned `pilgrimageRedis` service on only the application network, with no host port and a dedicated persistent AOF volume. Deploys must require its health and preserve both its container and volume; never reuse another application's Redis.
 - The stopped legacy `pilgrimageDB` container and `/home/cks/pilgrimage/dbmnt-rootless` are rollback-only and must not be restarted or deleted until the migration retention period ends.
 - The frontend proxy configuration is baked into its image; production does not bind-mount a repository Nginx file.
+- Frontend authentication is compiled into the static Vite bundle. The final
+  Nginx image retains `PORTFOLIO_BRANCH`/`PORTFOLIO_AUTH_MODE` as environment
+  and OCI label provenance only; changing runtime environment cannot change the
+  bundle. Rebuild for every mode change, and run `main`/`dev` images only behind
+  the trusted SSO edge. Backend and frontend images also contain the mode-0444,
+  two-line `/etc/portfolio-auth-build`; Django settings and the Nginx resolver
+  entrypoint reject any runtime branch/mode that differs from that build record.
 - Production sets `PILGRIMAGE_SSO_ENABLED=true` and builds the frontend with
   `VITE_SSO_ENABLED=true`. Host Nginx must run Authelia `auth_request`, discard
   client identity headers, and overwrite `Remote-User`, `Remote-Email`,
@@ -353,6 +363,26 @@ Pilgrimage/
   `/api/health/` also remains a non-sensitive deployment readiness endpoint
   that requires PostgreSQL and Redis but ignores all authentication headers.
 - Deployment must never run a global image/system prune or remove application volumes.
+
+### Branch-bound authentication
+
+- `scripts/portfolio-auth-mode.sh` is the canonical resolver. It reads an
+  explicit `PORTFOLIO_BRANCH`, then `GITHUB_REF_NAME`, then the current Git
+  branch. `main` and `dev` resolve to `sso`; every other branch resolves to
+  `local`.
+- An explicit `PORTFOLIO_AUTH_MODE` must equal the resolved mode or startup/build
+  fails. `PILGRIMAGE_SSO_ENABLED` and `VITE_SSO_ENABLED` are compatibility
+  adapters and must agree with the canonical result.
+- Local source checkouts may omit the canonical variables and use Git detection.
+  CI, Docker builds, and containers must inject the branch explicitly.
+- `npm run dev` and `npm run preview` intentionally assert `local`; they reject
+  `main` and `dev` immediately. Start either command only from a non-main/dev
+  development branch.
+- SSO mode requires the Pilgrimage edge secret during backend startup. Local
+  branches require no central SSO and retain registration, password login, JWT
+  refresh, and local logout.
+- Django admin URLs are registered only in local mode. `/admin/login/` must be
+  404 in SSO mode, including direct access to the backend's loopback port.
 
 ---
 
@@ -422,6 +452,7 @@ python manage.py runserver
 
 **5. Frontend** (separate terminal)
 ```bash
+# Run from a non-main/dev development branch; this command is local-auth only.
 cd frontend && npm install && npm run dev
 ```
 
@@ -466,6 +497,8 @@ cd frontend && node_modules/.bin/vite build
 | `KAKAO_JS_KEY` | backend | Kakao JS API key (server-side reference) |
 | `VITE_KAKAO_JS_KEY` | frontend/.env.production | Browser-visible Kakao JavaScript key; restrict allowed domains in Kakao Developers |
 | `VITE_API_BASE_URL` | frontend | `/api` |
+| `PORTFOLIO_BRANCH` | backend/build/Compose | Explicit in CI/images/containers; local checkouts auto-detect Git |
+| `PORTFOLIO_AUTH_MODE` | backend/build/Compose | `sso` for `main`/`dev`, otherwise `local`; mismatch is fatal |
 | `PILGRIMAGE_SSO_ENABLED` | backend/Compose | `true` only behind the host Authelia `auth_request` boundary |
 | `PILGRIMAGE_SSO_EDGE_SECRET_HOST_FILE` | Compose host | Absolute host path to the dedicated `cks:cks` mode-0640 edge-secret file |
 | `PILGRIMAGE_SSO_EDGE_SECRET_FILE` | backend/Compose | Preferred in-container path; direct runs accept runtime-owner mode-0400/0600 |

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
@@ -6,7 +7,6 @@ from common.health import health_check
 from common.places import place_nearby, place_reviews
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
     path("api/health/", health_check),
     path("api/directions/", directions),
     path("api/places/nearby/", place_nearby),
@@ -17,3 +17,6 @@ urlpatterns = [
     path("api/", include("apps.visits.urls")),
     path("api/", include("apps.routes.urls")),
 ]
+
+if not settings.PILGRIMAGE_SSO_ENABLED:
+    urlpatterns.insert(0, path("admin/", admin.site.urls))

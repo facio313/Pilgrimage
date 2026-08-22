@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node node_modules/vite/bin/vite.js",
+    "dev": "PORTFOLIO_AUTH_MODE=local ../scripts/portfolio-auth-mode.sh exec -- node node_modules/vite/bin/vite.js",
     "build": "tsc -b && node node_modules/vite/bin/vite.js build",
     "lint": "eslint .",
-    "preview": "node node_modules/vite/bin/vite.js preview",
+    "preview": "PORTFOLIO_AUTH_MODE=local ../scripts/portfolio-auth-mode.sh exec -- node node_modules/vite/bin/vite.js preview",
     "test": "vitest run",
     "test:watch": "vitest"
   },
