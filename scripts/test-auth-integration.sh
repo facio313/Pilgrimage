@@ -54,7 +54,7 @@ require(
     'ENTRYPOINT ["/usr/local/bin/portfolio-auth-entrypoint.sh"]' in dockerfile,
     "frontend does not verify auth mode at container startup",
 )
-require("portfolio-auth-mode.sh exec --" in entrypoint, "frontend entrypoint bypasses the resolver")
+require("portfolio-auth-mode.sh contract" in entrypoint, "frontend entrypoint bypasses the resolver")
 require("if not settings.PILGRIMAGE_SSO_ENABLED" in urls, "SSO mode still registers Django admin")
 
 print("pilgrimage auth integration contract: ok")
