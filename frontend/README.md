@@ -1,5 +1,7 @@
 # React + TypeScript + Vite
 
+Pilgrimage 프런트엔드는 모든 라우트와 통합 로그인 상태 화면을 공통 셸로 감쌉니다. 상단의 `← Bonifacio` 링크는 같은 탭에서 `https://bonifacio.work/`로 돌아가며, 키보드 포커스와 48px 터치 타깃을 유지합니다.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

@@ -56,7 +56,7 @@ export function SharedRoutePage() {
   if (queryError) return <div style={{ padding: 16, color: '#c00' }}>경로를 찾을 수 없습니다.</div>;
 
   return (
-    <div style={{ position: 'relative', height: '100vh' }}>
+    <div style={{ position: 'relative', height: '100%' }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
       <header style={overlayStyle}>
         {isLoading && <span>로딩 중...</span>}

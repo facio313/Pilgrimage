@@ -889,7 +889,7 @@ export function MapPage() {
   const inRoute = (id: string) => spotIds.includes(id);
 
   return (
-    <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', height: '100%', width: '100%', overflow: 'hidden' }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
 
       <div className={overlayClass}>

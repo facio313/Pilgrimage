@@ -9,6 +9,7 @@ import { ReviewPage } from './pages/ReviewPage';
 import { SharedRoutePage } from './pages/SharedRoutePage';
 import { AutoRoutePage } from './pages/AutoRoutePage';
 import { SpotDetailPage } from './pages/SpotDetailPage';
+import { PortfolioShell } from './PortfolioShell';
 import { exchangeSso } from './api/auth';
 import { useAuthStore } from './store/auth';
 
@@ -44,32 +45,36 @@ function App() {
 
   if (ssoState !== 'ready') {
     return (
-      <main style={{ padding: 24 }} role="status">
-        {ssoState === 'loading' ? '통합 로그인을 확인하고 있습니다…' : (
-          <>
-            <p>통합 로그인 정보를 확인하지 못했습니다.</p>
-            <a href={`/sso/?rd=${encodeURIComponent(window.location.href)}`}>다시 로그인</a>
-          </>
-        )}
-      </main>
+      <PortfolioShell>
+        <main style={{ padding: 24 }} role="status">
+          {ssoState === 'loading' ? '통합 로그인을 확인하고 있습니다…' : (
+            <>
+              <p>통합 로그인 정보를 확인하지 못했습니다.</p>
+              <a href={`/sso/?rd=${encodeURIComponent(window.location.href)}`}>다시 로그인</a>
+            </>
+          )}
+        </main>
+      </PortfolioShell>
     );
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/pilgrimage/">
-        <Routes>
-          <Route path="/" element={<MapPage />} />
-          <Route path="/themes" element={<ThemeSelectPage />} />
-          <Route path="/spot/:spotId" element={<SpotDetailPage />} />
-          <Route path="/route/save" element={<RouteSavePage />} />
-          <Route path="/route/auto" element={<AutoRoutePage />} />
-          <Route path="/visit/:spotId" element={<VisitPage />} />
-          <Route path="/review/:spotId" element={<ReviewPage />} />
-          <Route path="/shared/:token" element={<SharedRoutePage />} />
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <PortfolioShell>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter basename="/pilgrimage/">
+          <Routes>
+            <Route path="/" element={<MapPage />} />
+            <Route path="/themes" element={<ThemeSelectPage />} />
+            <Route path="/spot/:spotId" element={<SpotDetailPage />} />
+            <Route path="/route/save" element={<RouteSavePage />} />
+            <Route path="/route/auto" element={<AutoRoutePage />} />
+            <Route path="/visit/:spotId" element={<VisitPage />} />
+            <Route path="/review/:spotId" element={<ReviewPage />} />
+            <Route path="/shared/:token" element={<SharedRoutePage />} />
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </PortfolioShell>
   );
 }
 
