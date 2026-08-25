@@ -9,6 +9,7 @@ import { login, register, revokeSession } from '../api/auth';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { useRouteDraftStore } from '../store/route';
+import { BonifacioReturnLink } from '../PortfolioShell';
 
 const SEOUL_CITY_HALL = { lat: 37.5666103, lng: 126.9783882 };
 const SEARCH_RADIUS_M = 10_000;
@@ -891,6 +892,7 @@ export function MapPage() {
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%', overflow: 'hidden' }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
+      <BonifacioReturnLink />
 
       <div className={overlayClass}>
         <header className="map-header">

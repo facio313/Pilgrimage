@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getSharedRoute } from '../api/routes';
 import { useKakaoMap } from '../hooks/useKakaoMap';
+import { BonifacioReturnLink } from '../PortfolioShell';
 
 const SEOUL_CITY_HALL = { lat: 37.5666103, lng: 126.9783882 };
 
@@ -58,6 +59,7 @@ export function SharedRoutePage() {
   return (
     <div style={{ position: 'relative', height: '100%' }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
+      <BonifacioReturnLink />
       <header style={overlayStyle}>
         {isLoading && <span>로딩 중...</span>}
         {route && (
