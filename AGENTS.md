@@ -355,12 +355,27 @@ Pilgrimage/
   trusted headers to Django; direct local login and registration are disabled
   in SSO mode. Every access/refresh token is bound to immutable
   `User.sso_subject == Remote-User`; never link by Django username.
-  `Remote-Groups` is accepted only as the whitespace-free ordered prefix
-  `user`, `user,developer`, or `user,developer,admin`, and the current groups
-  plus effective hierarchical role must match the JWT claims on every request.
-  Unknown, duplicate, gapped, reordered, or legacy plural groups fail closed;
-  local Django staff/superuser/group flags never grant an SSO role. Production
-  secrets must use a restricted file mount as documented in `docs/sso.md`.
+  The v2 `Remote-Groups` contract is a whitespace-free role prefix (`user`,
+  `user,admin`, or `user,admin,chief-admin`), the mandatory `portfolio-v2`
+  marker, then an ordered subset of `access-react`, `access-vue`,
+  `access-dukkeobi`, `access-ddit-finalproject`, `access-monitor`,
+  `access-pilgrimage`, `access-multtara`, `access-feelmyrythm`, and
+  `access-garak`. A `user` or `admin` needs `access-pilgrimage`; the universal
+  chief assignment is exactly `user,admin,chief-admin,portfolio-v2` with no
+  explicit grant. During the migration window only the exact v1 assignments
+  `user`, `user,developer`, and `user,developer,admin` remain accepted: the
+  first two project to role `user` plus Pilgrimage access, while the last
+  projects to universal `chief-admin`. `developer` is never a current role or
+  token claim. Unknown, duplicate, role-gapped, reordered, whitespace-bearing,
+  over-1024-byte, or otherwise noncanonical values fail closed.
+  SSO JWTs bind only the immutable subject, effective role,
+  `access-pilgrimage`, and contract version; they never snapshot unrelated app
+  grants. Every authenticated HTTP, refresh, and logout path revalidates those
+  claims against the current edge assertion, so an unrelated grant change does
+  not invalidate the session but a role, Pilgrimage entitlement, or contract
+  version change does. Local Django staff/superuser/group flags never grant an
+  SSO role. Production secrets must use a restricted file mount as documented
+  in `docs/sso.md`.
   The backend image runs as UID `10001`, effective GID `0`; rootless production
   mounts a host `cks:cks 0640` file which appears as container `root:root 0640`.
 - `/pilgrimage/shared/:token`, its Vite assets, and

@@ -11,6 +11,7 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 User = get_user_model()
 EDGE_SECRET = "edge-secret-for-pilgrimage-tests-1234567890"
+V2_PILGRIMAGE_GROUPS = "user,portfolio-v2,access-pilgrimage"
 
 
 def sso_headers(
@@ -18,7 +19,7 @@ def sso_headers(
     subject="portfolio-owner",
     email="owner@example.test",
     name="Portfolio Owner",
-    groups="user",
+    groups=V2_PILGRIMAGE_GROUPS,
     secret=EDGE_SECRET,
 ):
     return {
@@ -55,9 +56,19 @@ class SsoAuthenticationTests(APITestCase):
         self.assertEqual(RefreshToken(response.data["refresh"])["sso_subject"], "portfolio-owner")
         self.assertEqual(AccessToken(response.data["access"])["sso_subject"], "portfolio-owner")
         self.assertEqual(RefreshToken(response.data["refresh"])["sso_role"], "user")
-        self.assertEqual(AccessToken(response.data["access"])["sso_groups"], ["user"])
+        self.assertEqual(
+            AccessToken(response.data["access"])["sso_entitlement"],
+            "access-pilgrimage",
+        )
+        self.assertEqual(
+            AccessToken(response.data["access"])["sso_contract_version"],
+            "portfolio-v2",
+        )
+        self.assertNotIn("sso_groups", AccessToken(response.data["access"]))
         self.assertEqual(response.data["role"], "user")
-        self.assertEqual(response.data["groups"], ["user"])
+        self.assertEqual(response.data["entitlement"], "access-pilgrimage")
+        self.assertEqual(response.data["contract_version"], "portfolio-v2")
+        self.assertNotIn("groups", response.data)
 
         user.set_password("legacy-local-password")
         user.save(update_fields=["password"])
@@ -181,26 +192,44 @@ class SsoAuthenticationTests(APITestCase):
         changed_role = self.client.get(
             route_url,
             HTTP_AUTHORIZATION=f"Bearer {access}",
-            **sso_headers(groups="developer"),
+            **sso_headers(
+                groups="user,admin,portfolio-v2,access-pilgrimage"
+            ),
         )
         self.assertEqual(changed_role.status_code, 401)
 
-    def test_groups_are_edge_bound_and_resolve_to_the_highest_central_role(self):
+    def test_v2_assignment_is_canonical_and_requires_pilgrimage_access(self):
         self.assertEqual(self.exchange(groups="unrelated").status_code, 403)
         self.assertEqual(self.exchange(groups="").status_code, 403)
         self.assertEqual(
-            self.exchange(groups="user", secret="wrong-edge-secret").status_code,
+            self.exchange(
+                groups=V2_PILGRIMAGE_GROUPS,
+                secret="wrong-edge-secret",
+            ).status_code,
             403,
         )
 
-        response = self.exchange(groups="user,developer")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["groups"], ["user", "developer"])
-        self.assertEqual(response.data["role"], "developer")
-        self.assertEqual(
-            AccessToken(response.data["access"])["sso_groups"],
-            ["user", "developer"],
+        response = self.exchange(
+            groups=(
+                "user,admin,portfolio-v2,access-react,access-dukkeobi,"
+                "access-pilgrimage,access-feelmyrythm,access-garak"
+            )
         )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["role"], "admin")
+        self.assertEqual(response.data["contract_version"], "portfolio-v2")
+        self.assertEqual(
+            AccessToken(response.data["access"])["sso_entitlement"],
+            "access-pilgrimage",
+        )
+
+        chief = self.exchange(
+            subject="portfolio-chief",
+            email="chief@example.test",
+            groups="user,admin,chief-admin,portfolio-v2",
+        )
+        self.assertEqual(chief.status_code, 200)
+        self.assertEqual(chief.data["role"], "chief-admin")
 
         for rejected_groups in (
             "users",
@@ -209,32 +238,100 @@ class SsoAuthenticationTests(APITestCase):
             "developer",
             "admin",
             "user,admin",
-            "developer,user",
+            "user,developer,admin,",
+            "user,developer,admin,access-pilgrimage",
+            "user,portfolio-v2",
+            "user,admin,portfolio-v2",
+            "user,chief-admin,portfolio-v2,access-pilgrimage",
+            "user,developer,portfolio-v2,access-pilgrimage",
+            "user,admin,chief-admin,portfolio-v2,access-pilgrimage",
+            "user,portfolio-v2,access-react,access-pilgrimage,access-react",
+            "user,portfolio-v2,access-pilgrimage,access-react",
+            "user,portfolio-v2,access-pilgrimage,access-unknown",
             "user,user",
-            "user,,developer",
-            "user, developer",
+            "user,,portfolio-v2,access-pilgrimage",
+            "user, portfolio-v2,access-pilgrimage",
             " user",
-            "user ",
+            f"{V2_PILGRIMAGE_GROUPS} ",
+            "x" * 1025,
         ):
             with self.subTest(groups=rejected_groups):
                 self.assertEqual(
                     self.exchange(
-                        subject=f"rejected-{len(rejected_groups)}-{rejected_groups}",
+                        subject=f"rejected-{len(rejected_groups)}",
                         email="rejected@example.test",
                         groups=rejected_groups,
                     ).status_code,
                     403,
                 )
 
+    def test_exact_v1_assignments_map_without_developer_role(self):
+        cases = (
+            ("user", "user"),
+            ("user,developer", "user"),
+            ("user,developer,admin", "chief-admin"),
+        )
+        for index, (groups, role) in enumerate(cases):
+            with self.subTest(groups=groups):
+                response = self.exchange(
+                    subject=f"legacy-subject-{index}",
+                    email=f"legacy-{index}@example.test",
+                    groups=groups,
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["role"], role)
+                self.assertEqual(response.data["contract_version"], "portfolio-v1")
+                token = AccessToken(response.data["access"])
+                self.assertEqual(token["sso_role"], role)
+                self.assertEqual(token["sso_entitlement"], "access-pilgrimage")
+                self.assertEqual(token["sso_contract_version"], "portfolio-v1")
+                self.assertNotIn("sso_groups", token)
+
+    def test_unrelated_v2_grant_changes_do_not_invalidate_access_token(self):
+        exchange = self.exchange(
+            groups="user,portfolio-v2,access-react,access-pilgrimage"
+        )
+        route_url = f"/api/routes/{uuid.uuid4()}/"
+        response = self.client.get(
+            route_url,
+            HTTP_AUTHORIZATION=f"Bearer {exchange.data['access']}",
+            **sso_headers(
+                groups="user,portfolio-v2,access-pilgrimage,access-garak"
+            ),
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_entitlement_and_contract_version_changes_invalidate_access_token(self):
+        exchange = self.exchange(groups="user")
+        route_url = f"/api/routes/{uuid.uuid4()}/"
+
+        migrated_contract = self.client.get(
+            route_url,
+            HTTP_AUTHORIZATION=f"Bearer {exchange.data['access']}",
+            **sso_headers(groups=V2_PILGRIMAGE_GROUPS),
+        )
+        self.assertEqual(migrated_contract.status_code, 401)
+
+        missing_entitlement = self.client.get(
+            route_url,
+            HTTP_AUTHORIZATION=f"Bearer {exchange.data['access']}",
+            **sso_headers(groups="user,portfolio-v2,access-react"),
+        )
+        self.assertEqual(missing_entitlement.status_code, 401)
+
     def test_refresh_requires_subject_bound_token_and_current_identity(self):
-        exchange = self.exchange()
+        exchange = self.exchange(
+            groups="user,portfolio-v2,access-react,access-pilgrimage"
+        )
         refresh = exchange.data["refresh"]
 
         accepted = self.client.post(
             "/api/auth/refresh/",
             {"refresh": refresh},
             format="json",
-            **sso_headers(),
+            **sso_headers(
+                groups="user,portfolio-v2,access-pilgrimage,access-garak"
+            ),
         )
         self.assertEqual(accepted.status_code, 200)
         self.assertEqual(AccessToken(accepted.data["access"])["sso_subject"], "portfolio-owner")
@@ -258,13 +355,17 @@ class SsoAuthenticationTests(APITestCase):
         self.assertEqual(rejected_unbound.status_code, 401)
 
     def test_logout_revokes_refresh_even_when_central_redirect_is_client_side(self):
-        exchange = self.exchange()
+        exchange = self.exchange(
+            groups="user,portfolio-v2,access-react,access-pilgrimage"
+        )
         response = self.client.post(
             "/api/auth/logout/",
             {"refresh": exchange.data["refresh"]},
             format="json",
             HTTP_AUTHORIZATION=f"Bearer {exchange.data['access']}",
-            **sso_headers(),
+            **sso_headers(
+                groups="user,portfolio-v2,access-pilgrimage,access-garak"
+            ),
         )
         self.assertEqual(response.status_code, 204)
         rejected = self.client.post(

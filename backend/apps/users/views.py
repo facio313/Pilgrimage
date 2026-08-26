@@ -123,8 +123,9 @@ def _issue_sso_token_pair(user, identity: TrustedSsoIdentity):
         raise AuthenticationFailed("The account is not linked to an SSO subject.")
     refresh = RefreshToken.for_user(user)
     refresh["sso_subject"] = user.sso_subject
-    refresh["sso_groups"] = list(identity.groups)
     refresh["sso_role"] = identity.role
+    refresh["sso_entitlement"] = identity.entitlement
+    refresh["sso_contract_version"] = identity.contract_version
     return refresh
 
 
@@ -174,7 +175,8 @@ class SsoExchangeView(APIView):
                 "email": user.email,
                 "nickname": user.nickname,
                 "role": identity.role,
-                "groups": list(identity.groups),
+                "entitlement": identity.entitlement,
+                "contract_version": identity.contract_version,
             }
         )
 

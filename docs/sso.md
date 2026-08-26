@@ -103,28 +103,66 @@ headers again for both public paths as defense in depth.
 Pilgrimage does not look up or link accounts by Django `username`.
 
 `Remote-Groups` is part of the same trusted assertion as the subject and is
-accepted only after the per-app edge secret succeeds. The complete allowed
-wire values are `user`, `user,developer`, and `user,developer,admin`. They are
-ordered prefixes with no whitespace. Unknown names, legacy plural names,
-duplicates, gaps, reordering, or empty segments fail closed. Roles are
-hierarchical: `developer` includes `user`, and `admin` includes both. Local
-branches retain the equivalent Django mapping (authenticated user, staff,
-superuser), but SSO mode never grants a role from local `is_staff`,
-`is_superuser`, group, or permission rows.
+accepted only after the per-app edge secret succeeds. The canonical v2 wire
+grammar is:
 
-SSO refresh and access tokens contain `sso_subject`, `sso_groups`, and
-`sso_role` claims. In SSO mode,
+```text
+<role-prefix>,portfolio-v2[,<ordered-app-grant>...]
+```
+
+The role prefix is exactly one of `user`, `user,admin`, or
+`user,admin,chief-admin`. App grants are an ordered subset of this fixed list:
+
+1. `access-react`
+2. `access-vue`
+3. `access-dukkeobi`
+4. `access-ddit-finalproject`
+5. `access-monitor`
+6. `access-pilgrimage`
+7. `access-multtara`
+8. `access-feelmyrythm`
+9. `access-garak`
+
+A `user` or `admin` assignment is accepted by this application only when it
+contains `access-pilgrimage`. Universal chief access is represented only by
+the exact value `user,admin,chief-admin,portfolio-v2`; a chief assignment with
+any explicit grant is noncanonical and rejected. Grant omissions are valid
+because the list is an ordered subset, but role gaps are not. Unknown names,
+duplicates, role gaps, grant reordering, empty segments, whitespace, and
+headers longer than 1024 bytes fail closed.
+
+During the central migration window, only these exact v1 values are accepted:
+
+| v1 assertion | Effective role | Effective Pilgrimage access |
+|---|---|---|
+| `user` | `user` | yes |
+| `user,developer` | `user` | yes |
+| `user,developer,admin` | `chief-admin` | universal |
+
+This adapter does not elevate the old `developer` role to current `admin`.
+`developer` is not a v2 role and is never emitted as a current response or JWT
+claim. Local branches map an authenticated user to `user`, Django staff to
+`admin`, and a Django superuser to `chief-admin`; SSO mode never grants a role
+from local `is_staff`, `is_superuser`, group, or permission rows.
+
+SSO refresh and access tokens contain `sso_subject`, `sso_role`,
+`sso_entitlement`, and `sso_contract_version`. `sso_entitlement` is the
+effective `access-pilgrimage` projection; the token never stores the complete
+`Remote-Groups` list or unrelated application grants. In SSO mode,
 every authenticated access, refresh, and logout request must satisfy all of the
 following:
 
 1. the edge secret is valid;
 2. current `Remote-User` equals the token subject;
 3. the token subject equals the current user's immutable `sso_subject`;
-4. current `Remote-Groups` exactly equals the token's canonical group prefix
-   and effective role;
+4. the current assertion still resolves to the token's effective role,
+   `access-pilgrimage`, and contract version;
 5. the user is active.
 
-Tokens issued before this migration intentionally stop working in SSO mode.
+Changing only another application's grant does not invalidate a Pilgrimage
+session. Removing `access-pilgrimage`, changing the effective role, or moving
+between v1 and v2 does invalidate it. Tokens issued before these projected
+claims were introduced intentionally stop working in SSO mode.
 
 ## Existing account link procedure
 

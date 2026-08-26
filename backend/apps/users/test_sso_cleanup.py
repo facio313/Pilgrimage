@@ -13,14 +13,18 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.routes.models import Route
-from apps.users.authentication import TrustedSsoIdentity
+from apps.users.authentication import (
+    PILGRIMAGE_ENTITLEMENT,
+    PORTFOLIO_V2_MARKER,
+    TrustedSsoIdentity,
+)
 from apps.users.models import User
-from apps.users.permissions import IsPortfolioAdmin, IsPortfolioDeveloper
+from apps.users.permissions import IsPortfolioAdmin, IsPortfolioChiefAdmin
 
 
 @override_settings(PILGRIMAGE_SSO_ENABLED=True)
 class PortfolioRolePermissionTests(TestCase):
-    def _request(self, *, role, groups, is_staff=False, is_superuser=False):
+    def _request(self, *, role, is_staff=False, is_superuser=False):
         user = User.objects.create_user(
             username=f"role-{role}-{User.objects.count()}",
             email=f"role-{User.objects.count()}@example.test",
@@ -36,46 +40,47 @@ class PortfolioRolePermissionTests(TestCase):
             subject=user.sso_subject,
             email=user.email,
             display_name="",
-            groups=groups,
             role=role,
+            entitlement=PILGRIMAGE_ENTITLEMENT,
+            contract_version=PORTFOLIO_V2_MARKER,
         )
         return request
 
     def test_central_roles_are_hierarchical_and_ignore_local_staff_flags(self):
-        developer = self._request(
-            role="developer",
-            groups=("user", "developer"),
+        admin = self._request(
+            role="admin",
             is_staff=False,
         )
-        self.assertTrue(IsPortfolioDeveloper().has_permission(developer, None))
-        self.assertFalse(IsPortfolioAdmin().has_permission(developer, None))
+        self.assertTrue(IsPortfolioAdmin().has_permission(admin, None))
+        self.assertFalse(IsPortfolioChiefAdmin().has_permission(admin, None))
+
+        chief = self._request(role="chief-admin")
+        self.assertTrue(IsPortfolioAdmin().has_permission(chief, None))
+        self.assertTrue(IsPortfolioChiefAdmin().has_permission(chief, None))
 
         user_with_legacy_staff = self._request(
             role="user",
-            groups=("user",),
             is_staff=True,
             is_superuser=True,
         )
         self.assertFalse(
-            IsPortfolioDeveloper().has_permission(user_with_legacy_staff, None)
+            IsPortfolioAdmin().has_permission(user_with_legacy_staff, None)
         )
 
     @override_settings(PILGRIMAGE_SSO_ENABLED=False)
     def test_local_branch_retains_django_staff_and_superuser_mapping(self):
         local_staff = self._request(
             role="user",
-            groups=("user",),
             is_staff=True,
         )
         local_admin = self._request(
             role="user",
-            groups=("user",),
             is_staff=True,
             is_superuser=True,
         )
-        self.assertTrue(IsPortfolioDeveloper().has_permission(local_staff, None))
-        self.assertFalse(IsPortfolioAdmin().has_permission(local_staff, None))
-        self.assertTrue(IsPortfolioAdmin().has_permission(local_admin, None))
+        self.assertTrue(IsPortfolioAdmin().has_permission(local_staff, None))
+        self.assertFalse(IsPortfolioChiefAdmin().has_permission(local_staff, None))
+        self.assertTrue(IsPortfolioChiefAdmin().has_permission(local_admin, None))
 
 
 @override_settings(PILGRIMAGE_SSO_ENABLED=True)

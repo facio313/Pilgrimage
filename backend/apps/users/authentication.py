@@ -10,14 +10,31 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.settings import api_settings
 
 INVALID_IDENTITY_MESSAGE = "A validated proxy identity is required."
-PORTFOLIO_ROLE_ORDER = ("user", "developer", "admin")
+PORTFOLIO_ROLE_ORDER = ("user", "admin", "chief-admin")
 PORTFOLIO_ROLE_RANK = {
     role: rank for rank, role in enumerate(PORTFOLIO_ROLE_ORDER)
 }
-PORTFOLIO_GROUP_CONTRACT = {
-    "user": ("user",),
-    "user,developer": ("user", "developer"),
-    "user,developer,admin": ("user", "developer", "admin"),
+PORTFOLIO_V2_MARKER = "portfolio-v2"
+PORTFOLIO_LEGACY_VERSION = "portfolio-v1"
+PILGRIMAGE_ENTITLEMENT = "access-pilgrimage"
+PORTFOLIO_GRANT_ORDER = (
+    "access-react",
+    "access-vue",
+    "access-dukkeobi",
+    "access-ddit-finalproject",
+    "access-monitor",
+    PILGRIMAGE_ENTITLEMENT,
+    "access-multtara",
+    "access-feelmyrythm",
+    "access-garak",
+)
+PORTFOLIO_GRANT_RANK = {
+    grant: rank for rank, grant in enumerate(PORTFOLIO_GRANT_ORDER)
+}
+PORTFOLIO_LEGACY_CONTRACT = {
+    "user": "user",
+    "user,developer": "user",
+    "user,developer,admin": "chief-admin",
 }
 
 
@@ -26,8 +43,9 @@ class TrustedSsoIdentity:
     subject: str
     email: str
     display_name: str
-    groups: tuple[str, ...]
     role: str
+    entitlement: str
+    contract_version: str
 
 
 def constant_time_equal(left: str, right: str) -> bool:
@@ -42,14 +60,46 @@ def _valid_header_value(value: str, max_length: int) -> bool:
     )
 
 
-def _trusted_role_groups(raw_groups: object) -> tuple[tuple[str, ...], str]:
+def _trusted_assignment(raw_groups: object) -> tuple[str, str]:
     if not isinstance(raw_groups, str) or not _valid_header_value(raw_groups, 1024):
         raise AuthenticationFailed(INVALID_IDENTITY_MESSAGE)
-    groups = PORTFOLIO_GROUP_CONTRACT.get(raw_groups)
-    if groups is None:
+
+    legacy_role = PORTFOLIO_LEGACY_CONTRACT.get(raw_groups)
+    if legacy_role is not None:
+        return legacy_role, PORTFOLIO_LEGACY_VERSION
+
+    groups = raw_groups.split(",")
+    if not groups or groups[0] != "user":
         raise AuthenticationFailed(INVALID_IDENTITY_MESSAGE)
-    role = groups[-1]
-    return groups, role
+
+    marker_index = 1
+    role = "user"
+    if len(groups) > marker_index and groups[marker_index] == "admin":
+        role = "admin"
+        marker_index += 1
+        if len(groups) > marker_index and groups[marker_index] == "chief-admin":
+            role = "chief-admin"
+            marker_index += 1
+
+    if len(groups) <= marker_index or groups[marker_index] != PORTFOLIO_V2_MARKER:
+        raise AuthenticationFailed(INVALID_IDENTITY_MESSAGE)
+
+    grants = groups[marker_index + 1 :]
+    if role == "chief-admin":
+        if grants:
+            raise AuthenticationFailed(INVALID_IDENTITY_MESSAGE)
+        return role, PORTFOLIO_V2_MARKER
+
+    previous_rank = -1
+    for grant in grants:
+        rank = PORTFOLIO_GRANT_RANK.get(grant)
+        if rank is None or rank <= previous_rank:
+            raise AuthenticationFailed(INVALID_IDENTITY_MESSAGE)
+        previous_rank = rank
+
+    if PILGRIMAGE_ENTITLEMENT not in grants:
+        raise AuthenticationFailed(INVALID_IDENTITY_MESSAGE)
+    return role, PORTFOLIO_V2_MARKER
 
 
 def trusted_sso_identity(request) -> TrustedSsoIdentity:
@@ -68,7 +118,9 @@ def trusted_sso_identity(request) -> TrustedSsoIdentity:
     subject = raw_subject.strip()
     email = request.META.get("HTTP_REMOTE_EMAIL", "").strip().lower()
     display_name = request.META.get("HTTP_REMOTE_NAME", "").strip()
-    groups, role = _trusted_role_groups(request.META.get("HTTP_REMOTE_GROUPS", ""))
+    role, contract_version = _trusted_assignment(
+        request.META.get("HTTP_REMOTE_GROUPS", "")
+    )
     if raw_subject != subject or not _valid_header_value(subject, 255) or not _valid_header_value(email, 254):
         raise AuthenticationFailed(INVALID_IDENTITY_MESSAGE)
     if display_name and not _valid_header_value(display_name, 254):
@@ -81,8 +133,9 @@ def trusted_sso_identity(request) -> TrustedSsoIdentity:
         subject=subject,
         email=email,
         display_name=display_name,
-        groups=groups,
         role=role,
+        entitlement=PILGRIMAGE_ENTITLEMENT,
+        contract_version=contract_version,
     )
 
 
@@ -90,8 +143,9 @@ def validate_subject_binding(
     *,
     identity: TrustedSsoIdentity,
     token_subject: object,
-    token_groups: object,
     token_role: object,
+    token_entitlement: object,
+    token_contract_version: object,
     user,
 ) -> None:
     token_value = token_subject if isinstance(token_subject, str) else ""
@@ -102,8 +156,14 @@ def validate_subject_binding(
         raise AuthenticationFailed("The SSO identity does not match this token.")
     if not isinstance(token_role, str) or not constant_time_equal(identity.role, token_role):
         raise AuthenticationFailed("The SSO role does not match this token.")
-    if not isinstance(token_groups, list) or tuple(token_groups) != identity.groups:
-        raise AuthenticationFailed("The SSO groups do not match this token.")
+    if not isinstance(token_entitlement, str) or not constant_time_equal(
+        identity.entitlement, token_entitlement
+    ):
+        raise AuthenticationFailed("The SSO entitlement does not match this token.")
+    if not isinstance(token_contract_version, str) or not constant_time_equal(
+        identity.contract_version, token_contract_version
+    ):
+        raise AuthenticationFailed("The SSO contract version does not match this token.")
 
 
 def validate_refresh_binding(*, request, refresh_token):
@@ -125,8 +185,9 @@ def validate_refresh_binding(*, request, refresh_token):
         validate_subject_binding(
             identity=identity,
             token_subject=refresh_token.get("sso_subject"),
-            token_groups=refresh_token.get("sso_groups"),
             token_role=refresh_token.get("sso_role"),
+            token_entitlement=refresh_token.get("sso_entitlement"),
+            token_contract_version=refresh_token.get("sso_contract_version"),
             user=user,
         )
         request.portfolio_sso_identity = identity
@@ -144,8 +205,9 @@ class SsoBoundJWTAuthentication(JWTAuthentication):
         validate_subject_binding(
             identity=identity,
             token_subject=validated_token.get("sso_subject"),
-            token_groups=validated_token.get("sso_groups"),
             token_role=validated_token.get("sso_role"),
+            token_entitlement=validated_token.get("sso_entitlement"),
+            token_contract_version=validated_token.get("sso_contract_version"),
             user=user,
         )
         request.portfolio_sso_identity = identity
