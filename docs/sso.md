@@ -270,3 +270,10 @@ Production uses the digest-pinned `pilgrimageRedis` service on the private
 dedicated `pilgrimage_redis_data` volume; application deploys must preserve that
 container and volume and must not attach to another portfolio application's
 Redis.
+
+The production Compose runtime bounds `pilgrimageRedis` at 0.75 CPU, CPU share
+512, and 256 MiB; `pilgrimageBackend` at 1.5 CPU, CPU share 768, and 384 MiB;
+and `pilgrimageFrontend` at 0.75 CPU, CPU share 512, and 64 MiB. `cpus` and
+`mem_limit` are ceilings, while `cpu_shares` is a relative contention weight.
+No service declares `mem_reservation`; validate OOM behavior, readiness, and
+request latency before changing these limits.
