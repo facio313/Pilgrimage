@@ -144,8 +144,10 @@ PILGRIMAGE_SSO_EDGE_SECRET = load_edge_secret(
 )
 REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
 
-# Enable only after the server key has API and server-IP restrictions.
-GOOGLE_PLACES_ENABLED = config("GOOGLE_PLACES_ENABLED", default=False, cast=bool)
+# Production's key has provider API/IP restrictions. Keep local development off
+# so a second local database cannot spend against the production key's budget.
+# The explicit false value remains an operational kill switch.
+GOOGLE_PLACES_ENABLED = config("GOOGLE_PLACES_ENABLED", default=PILGRIMAGE_SSO_ENABLED, cast=bool)
 GOOGLE_PLACES_KEY = config("GOOGLE_PLACES_KEY", default="")
 GOOGLE_PLACES_DAILY_BUDGET_KRW = config("GOOGLE_PLACES_DAILY_BUDGET_KRW", default=99, cast=int)
 # Conservative conversion ceiling, before 10% VAT; never assumes free tiers.

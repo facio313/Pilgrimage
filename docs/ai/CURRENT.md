@@ -16,3 +16,9 @@
 - User clarified deployment is existing GitHub Actions, not local SSH. Local access is not a deployment prerequisite (WAN hairpin may differ from Actions). Release authorized to main.
 - Compose enables restricted Google key by default with hard 99-KRW budget; explicit GOOGLE_PLACES_ENABLED=false remains a kill switch. Standalone/local settings default disabled. No local Docker CLI, so Compose and release build validated by CI.
 - Rollback: if unsafe behavior occurs, disable affected Google API/key access before reverting application code; never restore legacy credential-bearing photo URLs. Preserve shared cksDB and volumes.
+
+## First production verification
+- cf41195 pushed to main. Actions run 36975959372 passed all validation and deployed both SHA-tagged images. Server log: `[portfolio-deploy] Pilgrimage deployed successfully: cf41195f6bd3a0fb648ee1105200670d2f2b81e1`; backend healthy.
+- Authenticated browser GET /pilgrimage/api/health/ returned database/redis ok. /pilgrimage/api/places/nearby/ without params now returns HTTP400, proving new behavior. A valid Seoul City Hall query returned status=disabled, no Google call. The runtime did not enable the new flag from repository Compose defaults. Follow-up makes enabled default match SSO mode, keeps local mode disabled and explicit false kill switch.
+- Google provider restriction readback confirmed one API=Places API (New), IP restriction=218.39.50.153. Billing price table updated Oct2 shows Place Details Enterprise USD20/1000 equivalent KRW27,175.000006555/1000 (~1358.75 KRW/USD), below configured 2000 ceiling.
+- User is logged into production in Codex browser. Root /api is a different route; correct runtime path is /pilgrimage/api/. JSON-format direct navigation was blocked by browser; DRF browsable HTML works. Do not copy auth cookies.
