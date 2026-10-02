@@ -473,6 +473,10 @@ export function MapPage() {
         }
         reviewSlot.innerHTML = '<p class="spot-popover__review-loading">리뷰 불러오는 중...</p>';
         apiClient.get('/places/reviews/', { params: { place_id: place.placeId } }).then((revRes) => {
+          if (revRes.data?.status) {
+            reviewSlot.textContent = revRes.data.message || 'Google 정보를 일시적으로 불러올 수 없습니다.';
+            return;
+          }
           const reviews = revRes.data?.reviews || [];
           reviewsCacheRef.current.set(place.placeId, reviews);
           if (!reviews.length) {
@@ -488,7 +492,7 @@ export function MapPage() {
 
     const applyNearbyPlace = (place: any | null) => {
       const photoSlot = el.querySelector('.spot-popover__photo-slot');
-      if (photoSlot && place?.photoUrl) {
+      if (photoSlot && typeof place?.photoUrl === 'string' && place.photoUrl.startsWith('/places/photo/?')) {
         const img = document.createElement('img');
         img.className = 'spot-popover__photo';
         img.alt = place.name ?? '';
@@ -501,9 +505,28 @@ export function MapPage() {
           const ph = photoSlot.querySelector('div');
           if (ph) ph.className = 'spot-popover__photo-placeholder';
         }, { once: true });
-        img.src = place.photoUrl;
         photoSlot.innerHTML = '';
         photoSlot.appendChild(img);
+        // Fetch only through our API. Never load a Google URL or a legacy URL
+        // carrying a server key, including stale responses during a deployment.
+        apiClient.get(place.photoUrl, { responseType: 'blob' }).then((response) => {
+          const objectUrl = URL.createObjectURL(response.data);
+          const release = () => URL.revokeObjectURL(objectUrl);
+          img.addEventListener('load', release, { once: true });
+          img.addEventListener('error', release, { once: true });
+          img.src = objectUrl;
+          const authors: string[] = JSON.parse(response.headers['x-photo-authors'] || '[]');
+          if (authors.length) {
+            const credit = document.createElement('small');
+            credit.className = 'spot-popover__photo-credit';
+            credit.textContent = `사진: ${authors.join(', ')} · Google Maps`;
+            photoSlot.appendChild(credit);
+          }
+        }).catch(() => {
+          const placeholder = document.createElement('div');
+          placeholder.className = 'spot-popover__photo-placeholder';
+          img.replaceWith(placeholder);
+        });
       }
       renderGooglePlaceInfo(place);
       renderMapLinks(place);

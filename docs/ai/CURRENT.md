@@ -1,0 +1,18 @@
+# Google Places key exposure and daily budget — 2026-10-02
+
+- Goal: remove server-key exposure, limit total Google Places usage to under KRW 100 per day, deploy and verify production.
+- Branch: `codex-places-budget`, based on `origin/main` cd3425c. `codex/places-budget` cannot coexist with existing Git branch `codex`; the failed switch's index matched origin/main and was recovered without dropping user changes. Initial checkout was clean. Preserve `dev`.
+- Evidence: keys absent from inspected Git history; latest main returned server-key photo URLs and cached those URLs. Public Places proxy had no usage cap.
+- Implementation in progress: same-origin photo bytes proxy; never return/read legacy key URLs; data migration clears them; all Google operations reserve cost in PostgreSQL before network requests; shared rolling 24-hour limit <=99 KRW; reserve paid tier at USD/KRW 2000 +10% tax, ceil, without free-tier credits. Photos-only metadata is free but reserves 1 KRW for request control. Default disabled until provider key restrictions are verified.
+- Pending: tests, final security review, docs, commit/release and production verification; Google key identity/restrictions and billing conversion confirmation.
+- Access evidence: external ssh.bonifacio.work:22022 refused; LAN 192.168.75.98 ports 22/22022 have matching known production host key but cks + ~/.ssh/bonifacio_deploy rejected. User was asked for usable SSH connection metadata, no secrets. Authenticated server state unverified. Google Cloud Safari is logged in; the visible My First Project key does not match the local Pilgrimage key, so it has not been changed.
+- Verification so far: prior offline fake-key reproducer showed photoUrl exposed key; no paid Google calls. Final focused suite: 25 passed and 27 subtests passed on isolated PostgreSQL using /tmp/pilgrimage-places-venv with PYTHONPYCACHEPREFIX=/tmp/pilgrimage-places-pycache; all HTTP mocked. Backend full Ruff, frontend tsc --noEmit, migration drift check passed. Initial parent rerun used wrong local DB role and failed setup; corrected OS role CKS passed. No production deployment yet.
+- Memento unavailable: configured server/path absent. No credential values saved.
+
+## Release candidate
+- Fresh read-only review found two regressions, both addressed: select Text directly when query exists (two 77-KRW searches never fit); auto-height photo credit block to avoid overlap. Long valid place IDs now use hash-based review lookup keys; focused test passed.
+- Google Cloud: local Pilgrimage key matches `My Maps Project` (`indigo-terra-368403`); saved restriction to Places API (New) and public IP `218.39.50.153` (matches SSH DNS and observed current LAN egress). Waiting for readback/propagation; production's actual egress not directly observed. No key values recorded.
+- September billing table: KRW 22,376 for legacy Places API on separate `My First Project` (`pristine-nomad-368403`), whose key differs from local Pilgrimage. Asked user whether that separate service should be disabled or limited; answer pending. Do not conflate the two keys/costs.
+- User clarified deployment is existing GitHub Actions, not local SSH. Local access is not a deployment prerequisite (WAN hairpin may differ from Actions). Release authorized to main.
+- Compose enables restricted Google key by default with hard 99-KRW budget; explicit GOOGLE_PLACES_ENABLED=false remains a kill switch. Standalone/local settings default disabled. No local Docker CLI, so Compose and release build validated by CI.
+- Rollback: if unsafe behavior occurs, disable affected Google API/key access before reverting application code; never restore legacy credential-bearing photo URLs. Preserve shared cksDB and volumes.

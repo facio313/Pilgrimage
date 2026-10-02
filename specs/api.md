@@ -24,11 +24,21 @@
 | POST | `/api/reviews/` | Submit review (CERTIFIED only) | Yes |
 | GET | `/api/places/nearby/?lat=&lng=&query=` | Google Places nearby proxy | No |
 | GET | `/api/places/reviews/?place_id=` | Google Places reviews proxy | No |
+| GET | `/api/places/photo/?place_id=` | Same-origin photo bytes for a cached place; no upstream key/URL/redirect | No |
 | GET | `/api/health/` | Health check | No |
 
 ---
 
 ## Response Format
+
+Google Places search/review responses retain `results`/`reviews`. When Google is
+disabled, unavailable, or the shared rolling 24-hour budget is exhausted, they
+return an empty array plus `status` and a user-facing `message`; clients must not
+cache those temporary failures. `photoUrl` is relative to the API base URL (for
+example `/places/photo/?place_id=...`), not a Google URL. Photo responses are image
+bytes with `X-Photo-Authors` (JSON array of author names), `Cache-Control: private,
+no-store`; clients display the credits. Missing photos return 404, budget exhaustion
+429, disabled/unavailable budget storage 503, and invalid upstream images 502.
 
 **Success**: DRF default format
 

@@ -4,13 +4,14 @@ from django.urls import include, path
 
 from common.directions import directions
 from common.health import health_check
-from common.places import place_nearby, place_reviews
+from common.places import place_nearby, place_photo, place_reviews
 
 urlpatterns = [
     path("api/health/", health_check),
     path("api/directions/", directions),
     path("api/places/nearby/", place_nearby),
     path("api/places/reviews/", place_reviews),
+    path("api/places/photo/", place_photo),
     path("api/auth/", include("apps.users.urls")),
     path("api/spots/", include("apps.spots.urls")),
     path("api/reviews/", include("apps.reviews.urls")),

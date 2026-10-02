@@ -1050,8 +1050,17 @@ body {
 }
 
 .spot-popover__photo-slot {
-  height: 128px;
+  min-height: 128px;
   margin-bottom: 8px;
+}
+
+.spot-popover__photo-credit {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: #666;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .spot-popover__photo {

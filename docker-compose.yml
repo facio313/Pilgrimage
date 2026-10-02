@@ -44,6 +44,11 @@ services:
       POSTGRES_HOST: cksDB
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://pilgrimageRedis:6379/0
+      # Production key is restricted in Google Cloud; the database enforces the
+      # shared rolling budget even across worker/container restarts.
+      GOOGLE_PLACES_ENABLED: ${GOOGLE_PLACES_ENABLED:-true}
+      GOOGLE_PLACES_DAILY_BUDGET_KRW: "99"
+      GOOGLE_PLACES_USD_KRW_CEILING: ${GOOGLE_PLACES_USD_KRW_CEILING:-2000}
       PORTFOLIO_BRANCH: ${PORTFOLIO_BRANCH:?PORTFOLIO_BRANCH is required}
       PORTFOLIO_AUTH_MODE: ${PORTFOLIO_AUTH_MODE:?PORTFOLIO_AUTH_MODE is required}
       PILGRIMAGE_SSO_ENABLED: ${PILGRIMAGE_SSO_ENABLED:?PILGRIMAGE_SSO_ENABLED is required}

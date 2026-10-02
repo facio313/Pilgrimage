@@ -4,6 +4,18 @@ from django.contrib.gis.db import models as gis_models
 from django.db import models
 
 
+class GooglePlacesBudget(models.Model):
+    """A single database row serializes spending across workers and restarts."""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+
+
+class GooglePlacesCharge(models.Model):
+    operation = models.CharField(max_length=20)
+    reserved_krw = models.PositiveIntegerField()
+    reserved_at = models.DateTimeField(db_index=True)
+
+
 class GooglePlaceCache(models.Model):
     lookup_key = models.CharField(max_length=100, unique=True, db_index=True)
     place_id = models.CharField(max_length=200, blank=True, db_index=True)
