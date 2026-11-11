@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { resolveFrontendAuthMode } from '../portfolioAuthMode.js'
 
 describe('portfolio auth mode', () => {
-  it.each(['main', 'dev', 'refs/heads/main', 'refs/heads/dev'])(
+  it.each(['main', 'refs/heads/main'])(
     'enables SSO for %s',
     (branch) => {
       expect(resolveFrontendAuthMode({
@@ -13,12 +13,22 @@ describe('portfolio auth mode', () => {
     },
   )
 
-  it('keeps a feature branch on local auth', () => {
+  it('keeps dev on local auth', () => {
     expect(resolveFrontendAuthMode({
-      PORTFOLIO_BRANCH: 'codex/auth-contract',
+      PORTFOLIO_BRANCH: 'dev',
       PORTFOLIO_AUTH_MODE: 'local',
       VITE_SSO_ENABLED: 'false',
     })).toEqual({ mode: 'local', ssoEnabled: false })
+  })
+
+  it.each([true, false])('rejects unsupported branches with resolver available=%s', (available) => {
+    for (const branch of ['codex', 'topic', 'feature/auth']) {
+      expect(() => resolveFrontendAuthMode({
+        PORTFOLIO_BRANCH: branch,
+        PORTFOLIO_AUTH_MODE: 'local',
+      }, available)).toThrow()
+    }
+    expect(resolveFrontendAuthMode({ PORTFOLIO_BRANCH: 'refs/heads/dev', PORTFOLIO_AUTH_MODE: 'local' }, available).ssoEnabled).toBe(false)
   })
 
   it('rejects canonical and legacy mismatches', () => {

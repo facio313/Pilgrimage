@@ -7,22 +7,9 @@
 
 ## ⚠️ Agent Authority Boundaries — MUST READ FIRST
 
-### 1. Branch Scope per Agent
+### 1. Shared main/dev policy
 
-Each AI agent may only work within its own tool branch and below.
-**`main` and `dev` branches are managed exclusively by the user.**
-
-| Branch | Who controls it |
-|--------|----------------|
-| `main` | User only |
-| `dev` | User only |
-| `anthropic` | Claude Code (this agent) |
-| `cursor` | Cursor |
-| `codex` | OpenAI Codex |
-| `{tool}/feature-*` | Each respective agent |
-
-- Agents **must not** commit, merge, or push to `main` or `dev` without an explicit user request.
-- When the user explicitly asks, agents may assist with `main`/`dev` operations.
+Only `main` (production) and `dev` (development) are active branches. All agents implement and run local apps on the actual `dev` checkout. Fetch the latest `origin/main` before changing code and integrate it into `dev` without overwriting local work. CI validates both branches; production publishing/deployment remains restricted to reviewed `main` history. Tool/feature branches are retired. Preserve their unique commits and dirty/untracked/ignored files before cleanup; archived worktrees must not run local services. Never force-push or discard uncommitted work.
 
 ### 2. Shared Project Information → Always Update `AGENTS.md`
 
@@ -182,7 +169,7 @@ curl -s -X POST http://localhost:57332/mcp \
 |------|-------|
 | Purpose | Theme-based tourism route recommendation + GPS 30-min stay verification |
 | Deployment | Raspberry Pi 5 (ARM64) + Ubuntu 24.04 LTS |
-| Auth | Branch contract: `main`/`dev` use bonifacio.work Authelia SSO; every other branch uses local credentials |
+| Auth | Branch contract: `main` uses bonifacio.work Authelia SSO; `dev` uses local credentials |
 | Coordinate system | SRID 4326 (WGS84) — same as Kakao Maps |
 
 ---
@@ -343,7 +330,7 @@ Pilgrimage/
 - Frontend authentication is compiled into the static Vite bundle. The final
   Nginx image retains `PORTFOLIO_BRANCH`/`PORTFOLIO_AUTH_MODE` as environment
   and OCI label provenance only; changing runtime environment cannot change the
-  bundle. Rebuild for every mode change, and run `main`/`dev` images only behind
+  bundle. Rebuild for every mode change, and run `main` images only behind
   the trusted SSO edge. Backend and frontend images also contain the mode-0444,
   two-line `/etc/portfolio-auth-build`; Django settings and the Nginx resolver
   entrypoint reject any runtime branch/mode that differs from that build record.
@@ -399,16 +386,14 @@ Pilgrimage/
 
 - `scripts/portfolio-auth-mode.sh` is the canonical resolver. It reads an
   explicit `PORTFOLIO_BRANCH`, then `GITHUB_REF_NAME`, then the current Git
-  branch. `main` and `dev` resolve to `sso`; every other branch resolves to
-  `local`.
+  branch. `main` resolves to `sso`, `dev` to `local`; all other branches fail closed.
 - An explicit `PORTFOLIO_AUTH_MODE` must equal the resolved mode or startup/build
   fails. `PILGRIMAGE_SSO_ENABLED` and `VITE_SSO_ENABLED` are compatibility
   adapters and must agree with the canonical result.
 - Local source checkouts may omit the canonical variables and use Git detection.
   CI, Docker builds, and containers must inject the branch explicitly.
 - `npm run dev` and `npm run preview` intentionally assert `local`; they reject
-  `main` and `dev` immediately. Start either command only from a non-main/dev
-  development branch.
+  every checkout except actual `dev`.
 - SSO mode requires the Pilgrimage edge secret during backend startup. Local
   branches require no central SSO and retain registration, password login, JWT
   refresh, and local logout.
@@ -493,7 +478,7 @@ python manage.py runserver
 
 **5. Frontend** (separate terminal)
 ```bash
-# Run from a non-main/dev development branch; this command is local-auth only.
+# Run from a dev checkout; this command is local-auth only.
 cd frontend && npm install && npm run dev
 ```
 
@@ -539,7 +524,7 @@ cd frontend && node_modules/.bin/vite build
 | `VITE_KAKAO_JS_KEY` | frontend/.env.production | Browser-visible Kakao JavaScript key; restrict allowed domains in Kakao Developers |
 | `VITE_API_BASE_URL` | frontend | `/api` |
 | `PORTFOLIO_BRANCH` | backend/build/Compose | Explicit in CI/images/containers; local checkouts auto-detect Git |
-| `PORTFOLIO_AUTH_MODE` | backend/build/Compose | `sso` for `main`/`dev`, otherwise `local`; mismatch is fatal |
+| `PORTFOLIO_AUTH_MODE` | backend/build/Compose | `main=sso`, `dev=local`; other branches and mismatches fail closed |
 | `PILGRIMAGE_SSO_ENABLED` | backend/Compose | `true` only behind the host Authelia `auth_request` boundary |
 | `PILGRIMAGE_SSO_EDGE_SECRET_HOST_FILE` | Compose host | Absolute host path to the dedicated `cks:cks` mode-0640 edge-secret file |
 | `PILGRIMAGE_SSO_EDGE_SECRET_FILE` | backend/Compose | Preferred in-container path; direct runs accept runtime-owner mode-0400/0600 |
@@ -555,42 +540,7 @@ cd frontend && node_modules/.bin/vite build
 
 ## Branch Strategy
 
-### Worktree Layout
-
-| Directory | Branch | AI Tool |
-|-----------|--------|---------|
-| `Pilgrimage/` (main repo) | `main` | — (release baseline) |
-| `Pilgrimage/worktrees/codex/` | `codex` | OpenAI Codex |
-| `Pilgrimage/worktrees/cursor/` | `cursor` | Cursor |
-| `Pilgrimage/worktrees/anthropic/` | `anthropic` | Claude Code |
-
-### Flow
-
-```
-codex/feature-name ──┐
-cursor/feature-name ─┤→ {tool} → dev → main
-anthropic/feat-name ─┘
-```
-
-1. Branch off the tool branch for any new feature:
-   ```bash
-   git checkout -b codex/spot-filter codex
-   ```
-2. Merge completed feature back into the tool branch:
-   ```bash
-   git checkout codex && git merge codex/spot-filter
-   ```
-3. Merge tool branch into `dev` after validation:
-   ```bash
-   git checkout dev && git merge codex
-   ```
-4. Merge `dev` into `main` after full verification only.
-
-### Naming Rules
-
-- Tool branches: `codex`, `cursor`, `anthropic`
-- Feature branches: `{tool}/{kebab-case-feature}` — e.g. `codex/gps-verify`
-- English kebab-case only.
+Only `main` (production) and `dev` (development) are active branches. All agents implement and run local apps on the actual `dev` checkout. Fetch the latest `origin/main` before changing code and integrate it into `dev` without overwriting local work. CI validates both branches; production publishing/deployment remains restricted to reviewed `main` history. Tool/feature branches are retired. Preserve their unique commits and dirty/untracked/ignored files before cleanup; archived worktrees must not run local services. Never force-push or discard uncommitted work.
 
 ---
 

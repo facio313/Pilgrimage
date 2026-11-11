@@ -27,8 +27,7 @@ def require(condition, message):
 
 for command in ("dev", "preview"):
     value = package["scripts"][command]
-    require("PORTFOLIO_AUTH_MODE=local" in value, f"{command} is not local-only")
-    require("../scripts/portfolio-auth-mode.sh exec --" in value, f"{command} bypasses the resolver")
+    require("../scripts/dev-only.sh" in value, f"{command} bypasses the actual dev checkout guard")
 
 require("branches: [main, dev]" in workflow, "main/dev workflow trigger is missing")
 require(workflow.count("push: ${{ github.ref_name == 'main' }}") == 2, "dev image build could push")

@@ -17,7 +17,7 @@ env:
   BACKEND_IMAGE: ghcr.io/facio313/pilgrimage-backend
   FRONTEND_IMAGE: ghcr.io/facio313/pilgrimage-frontend
   PORTFOLIO_BRANCH: ${{ github.ref_name }}
-  PORTFOLIO_AUTH_MODE: sso
+  PORTFOLIO_AUTH_MODE: ${{ github.ref_name == 'main' && 'sso' || 'local' }}
 
 jobs:
   validate:
@@ -35,8 +35,8 @@ jobs:
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://127.0.0.1:6379/0
-      PILGRIMAGE_SSO_ENABLED: "true"
-      VITE_SSO_ENABLED: "true"
+      PILGRIMAGE_SSO_ENABLED: ${{ github.ref_name == 'main' && 'true' || 'false' }}
+      VITE_SSO_ENABLED: ${{ github.ref_name == 'main' && 'true' || 'false' }}
       GDAL_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu/libgdal.so
       GEOS_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu/libgeos_c.so
     services:
@@ -172,7 +172,7 @@ jobs:
           build-args: |
             PORTFOLIO_BRANCH=${{ env.PORTFOLIO_BRANCH }}
             PORTFOLIO_AUTH_MODE=${{ env.PORTFOLIO_AUTH_MODE }}
-            VITE_SSO_ENABLED=true
+            VITE_SSO_ENABLED=${{ github.ref_name == 'main' && 'true' || 'false' }}
           platforms: linux/arm64
           push: ${{ github.ref_name == 'main' }}
           pull: true

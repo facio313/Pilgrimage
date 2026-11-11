@@ -4,7 +4,7 @@
 
 Authentication mode is derived by `scripts/portfolio-auth-mode.sh`. The
 resolver uses `PORTFOLIO_BRANCH`, then `GITHUB_REF_NAME`, then the current Git
-branch. `main` and `dev` are always `sso`; all other branches are `local`.
+branch. `main` is `sso`; `dev` is `local`; all other branches are rejected.
 `PORTFOLIO_AUTH_MODE` may be supplied as an assertion, but a mismatch fails
 before Django or Vite starts. Packaged builds and containers must explicitly
 inject the branch and mode; only a local checkout may rely on Git detection.
@@ -17,14 +17,14 @@ login available.
 
 `npm run dev` and `npm run preview` are deliberately local-auth commands. They
 assert `PORTFOLIO_AUTH_MODE=local` through the resolver and therefore fail
-immediately on `main` or `dev`; use a non-main/dev branch for interactive local
+outside the actual `dev` checkout; use `dev` for interactive local
 development.
 
 Vite authentication flags are compiled into the static frontend bundle. The
 final Nginx image's canonical environment values and
 `org.opencontainers.image.ref.name` / `io.bonifacio.portfolio.auth-mode` labels
 are deployment audit metadata, not runtime switches. A mode change requires an
-image rebuild, and every `main`/`dev` static image must remain behind the trusted
+image rebuild, and every `main` static image must remain behind the trusted
 SSO edge. Both application images bake the normalized branch and mode as the
 two mode-0444 lines in `/etc/portfolio-auth-build`. Django settings compare that
 file to the runtime canonical pair, and the frontend Nginx entrypoint invokes
